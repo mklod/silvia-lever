@@ -1,0 +1,25 @@
+revise Valve/water-flow logic. all valves are 3-way directional control valves, so there is a complex routing of water flow: 
+ 
+  
+ VALVE1 = VALVE_PUMP
+	 open/energized: flow from pump to thermoblock OPV
+	 closed/de energized: flow from pump to boiler OPV
+  
+ VALVE2 = VALVE_THERMOBLOCK
+	 energized: flow from thermoblock coil to grouphead
+	 de energized: flow from thermoblock coil to drain
+ 
+ 
+to fill/prime the thermoblock: 
+open/energize valve1, keep valve2 closed/de energized. pump/prime, visually inspect overflow coming out of drain. low pressure.
+
+during brew (after priming and heating to brew temp):
+open valve1,  pressing 'brew start' button immediately opens valve2 and allows pressure to build up at the grouphead while the motor is pumping. when 'brew stop' button is pressed, valve 2 is closed, pump is halted, and any remaining pressure is relieved through drain. max pressure is controlled by thermoblock OPV.
+
+to fill/prime the steam boiler: 
+close valve1. [valve2 is also closed by default, but irrelevant to steam boiler operation.] pump/prime, visually inspect overflow coming out of boiler OPV. 
+
+during steam:
+primed boiler is heated to set temp. water in full boiler has expanded to become steam. excess pressure relieved by OPV.
+a mechanical steam valve (not connected to any electronics) is manually opened by the user and manually adjusted to output steam.
+

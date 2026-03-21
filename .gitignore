@@ -1,0 +1,20 @@
+# Build artifacts
+ui/windows/build/
+ui/windows/dist/
+*.rar
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Logs
+ui/rpi/pyqt6/logs/
+ui/windows/source/logs/
+
+# Claude Code local settings
+.claude/
+
+# OS files
+Thumbs.db
+.DS_Store

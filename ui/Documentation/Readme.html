@@ -1,0 +1,702 @@
+﻿<!DOCTYPE html>
+<html>
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Welcome file</title>
+  <link rel="stylesheet" href="https://stackedit.io/style.css" />
+</head>
+
+<body class="stackedit">
+  <div class="stackedit__html"><h1 id="silvia-coffee-machine-control-system">Silvia Coffee Machine Control System</h1>
+<p>A comprehensive touchscreen-controlled coffee machine system combining Arduino/Teensy firmware with PyQt6 desktop application for professional espresso brewing control.</p>
+<h2 id="🎯-project-overview">🎯 Project Overview</h2>
+<p>This project transforms a traditional Silvia coffee machine into a modern, touchscreen-controlled brewing system with real-time monitoring, data logging, and precise temperature/pressure control.</p>
+<h3 id="key-features">Key Features</h3>
+<ul>
+<li>
+<p><strong>Touchscreen Interface</strong>: Full-screen PyQt6 GUI optimized for touchscreen displays</p>
+</li>
+<li>
+<p><strong>Real-time Monitoring</strong>: Live temperature, pressure, and weight tracking</p>
+</li>
+<li>
+<p><strong>Data Visualization</strong>: Real-time brewing charts and extraction curves</p>
+</li>
+<li>
+<p><strong>Safety Systems</strong>: Multiple safety checks and emergency stop functionality</p>
+</li>
+<li>
+<p><strong>Dual Mode Operation</strong>: Mock mode for development, hardware mode for production</p>
+</li>
+<li>
+<p><strong>Persistent Settings</strong>: Temperature preferences and calibration data storage</p>
+</li>
+<li>
+<p><strong>Professional Brewing</strong>: Precise control over all brewing parameters</p>
+</li>
+</ul>
+<h2 id="🏗️-system-architecture">🏗️ System Architecture</h2>
+<pre><code>
+┌─────────────────┐ USB Serial ┌──────────────────┐
+
+│ PyQt6 GUI │ ◄──────────────► │ Arduino/Teensy │
+
+│ Application │ │ Firmware │
+
+└─────────────────┘ └──────────────────┘
+
+│ │
+
+▼ ▼
+
+┌─────────────────┐ ┌──────────────────┐
+
+│ Data Logging │ │ Hardware Control │
+
+│ Safety Manager │ │ Sensor Reading │
+
+│ Settings Mgmt │ │ PWM Control │
+
+└─────────────────┘ └──────────────────┘
+
+</code></pre>
+<h2 id="📋-hardware-components">📋 Hardware Components</h2>
+<h3 id="sensors">Sensors</h3>
+<ul>
+<li>
+<p><strong>PT100 Temperature Sensor</strong> via MAX31865 (SPI)</p>
+</li>
+<li>
+<p><strong>Honeywell MIP Pressure Sensor</strong> via ADS1115 (I2C)</p>
+</li>
+<li>
+<p><strong>Dual HX711 Load Cells</strong> for weight measurement</p>
+</li>
+<li>
+<p><strong>Potentiometer</strong> for manual pump speed control</p>
+</li>
+</ul>
+<h3 id="actuators">Actuators</h3>
+<ul>
+<li>
+<p><strong>PWM Controlled Water Pump</strong></p>
+</li>
+<li>
+<p><strong>SSR Controlled Heater Element</strong></p>
+</li>
+<li>
+<p><strong>Solenoid Valve</strong> for water flow control</p>
+</li>
+</ul>
+<h3 id="controller">Controller</h3>
+<ul>
+<li>
+<p><strong>Teensy 4.0</strong> microcontroller</p>
+</li>
+<li>
+<p><strong>USB Serial Communication</strong> with desktop application</p>
+</li>
+</ul>
+<h2 id="🔧-pin-configuration">🔧 Pin Configuration</h2>
+<p>| Pin | Component | Function |</p>
+<p>|-----|-----------|----------|</p>
+<p>| A0 | Potentiometer | Pump speed control |</p>
+<p>| D8 | Valve Relay | Water flow control |</p>
+<p>| D9 | Pump PWM | Motor speed control |</p>
+<p>| D10-D13 | PT100 (SPI) | Temperature sensor |</p>
+<p>| D15 | Heater SSR | PWM heating control |</p>
+<p>| D18-D19 | ADS1115 (I2C) | Pressure sensor |</p>
+<p>| D20-D22 | HX711 Scales | Weight measurement |</p>
+<h2 id="🚀-quick-start">🚀 Quick Start</h2>
+<h3 id="prerequisites">Prerequisites</h3>
+<ul>
+<li>
+<p>Python 3.8+</p>
+</li>
+<li>
+<p>PyQt6</p>
+</li>
+<li>
+<p>Arduino IDE with required libraries</p>
+</li>
+<li>
+<p>Teensy 4.0 or compatible Arduino board</p>
+</li>
+</ul>
+<h3 id="installation">Installation</h3>
+<ol>
+<li><strong>Clone the repository</strong></li>
+</ol>
+<pre class=" language-bash"><code class="prism  language-bash">
+<span class="token function">git</span>  clone <span class="token operator">&lt;</span>repository-url<span class="token operator">&gt;</span>
+
+<span class="token function">cd</span>  silvia-coffee-machine
+
+</code></pre>
+<ol start="2">
+<li><strong>Install Python dependencies</strong></li>
+</ol>
+<pre class=" language-bash"><code class="prism  language-bash">
+pip  <span class="token function">install</span>  PyQt6  pyserial
+
+</code></pre>
+<ol start="3">
+<li><strong>Upload Arduino firmware</strong></li>
+</ol>
+<ul>
+<li>
+<p>Open <code>silvia_lever_main/silvia_lever_main.ino</code> in Arduino IDE</p>
+</li>
+<li>
+<p>Install required libraries:</p>
+</li>
+<li>
+<p>Adafruit_MAX31865</p>
+</li>
+<li>
+<p>ADS1115_WE</p>
+</li>
+<li>
+<p>HX711</p>
+</li>
+<li>
+<p>Upload to Teensy 4.0</p>
+</li>
+</ul>
+<ol start="4">
+<li><strong>Run the application</strong></li>
+</ol>
+<pre class=" language-bash"><code class="prism  language-bash">
+<span class="token comment"># Mock mode (for development/testing)</span>
+
+python  pyqt6/run_silvia.py  --mock  --fullscreen
+
+  
+
+<span class="token comment"># Hardware mode (with real hardware)</span>
+
+python  pyqt6/run_silvia.py  --port  COM3  --fullscreen
+
+</code></pre>
+<h2 id="💻-software-components">💻 Software Components</h2>
+<h3 id="core-modules">Core Modules</h3>
+<h4 id="run_silvia.py"><code>run_silvia.py</code></h4>
+<p>Main application entry point with command-line argument parsing.</p>
+<p><strong>Usage:</strong></p>
+<pre class=" language-bash"><code class="prism  language-bash">
+python  run_silvia.py <span class="token punctuation">[</span>OPTIONS<span class="token punctuation">]</span>
+
+  
+
+Options:
+
+--mock  Use  mock  serial  communication
+
+--port  PORT  Serial  port <span class="token punctuation">(</span>e.g., COM3,  /dev/ttyUSB0<span class="token punctuation">)</span>
+
+--fullscreen  Run  <span class="token keyword">in</span>  fullscreen  mode
+
+</code></pre>
+<h4 id="qml_backend.py"><code>qml_backend.py</code></h4>
+<p>Core controller class managing all system operations:</p>
+<ul>
+<li>
+<p>Serial communication with Arduino</p>
+</li>
+<li>
+<p>Temperature control logic</p>
+</li>
+<li>
+<p>Safety monitoring</p>
+</li>
+<li>
+<p>Data logging coordination</p>
+</li>
+<li>
+<p>QML signal/slot connections</p>
+</li>
+</ul>
+<h4 id="main.qml"><code>main.qml</code></h4>
+<p>PyQt6 QML interface providing:</p>
+<ul>
+<li>
+<p>Home screen with operation buttons</p>
+</li>
+<li>
+<p>Brew screen with real-time charts</p>
+</li>
+<li>
+<p>Settings screen for temperature adjustment</p>
+</li>
+<li>
+<p>Error/warning dialogs</p>
+</li>
+</ul>
+<h4 id="temperature_controller.py"><code>temperature_controller.py</code></h4>
+<p>Intelligent temperature management:</p>
+<ul>
+<li>
+<p>PID-like control with hysteresis</p>
+</li>
+<li>
+<p>Separate brew/steam temperature targets</p>
+</li>
+<li>
+<p>Safety temperature monitoring</p>
+</li>
+</ul>
+<h4 id="safety_manager.py"><code>safety_manager.py</code></h4>
+<p>Comprehensive safety system:</p>
+<ul>
+<li>
+<p>Temperature overheat protection</p>
+</li>
+<li>
+<p>Communication timeout detection</p>
+</li>
+<li>
+<p>Maximum operation time limits</p>
+</li>
+<li>
+<p>Emergency stop functionality</p>
+</li>
+</ul>
+<h4 id="data_logger.py"><code>data_logger.py</code></h4>
+<p>Persistent data storage:</p>
+<ul>
+<li>
+<p>Sensor data logging</p>
+</li>
+<li>
+<p>Brew session recording</p>
+</li>
+<li>
+<p>Error/event logging</p>
+</li>
+<li>
+<p>CSV export capability</p>
+</li>
+</ul>
+<h3 id="serial-communication-protocol">Serial Communication Protocol</h3>
+<h4 id="commands-pc-→-arduino">Commands (PC → Arduino)</h4>
+<pre><code>
+SET_TEMP BREW &lt;temp&gt; - Set brew temperature (°C)
+
+SET_TEMP STEAM &lt;temp&gt; - Set steam temperature (°C)
+
+START_BREW - Begin brew heating cycle
+
+START_STEAM - Begin steam heating cycle
+
+START_FLUSH - Begin flush cycle
+
+BEGIN_BREW - Start actual brewing
+
+STOP - Stop current operation
+
+TARE_SCALES - Zero the scales
+
+CAL_SCALE &lt;weight&gt; - Calibrate with known weight
+
+GET_STATUS - Request current status
+
+PING - Connection test
+
+ABORT - Emergency stop
+
+</code></pre>
+<h4 id="responses-arduino-→-pc">Responses (Arduino → PC)</h4>
+<pre><code>
+READY - System initialized
+
+OK:&lt;operation&gt; - Command acknowledged
+
+ERROR:&lt;message&gt; - Error occurred
+
+PONG - Ping response
+
+</code></pre>
+<h4 id="telemetry-data-250ms-intervals">Telemetry Data (250ms intervals)</h4>
+<pre><code>
+DATA:&lt;state&gt;,&lt;temp&gt;,&lt;pressure&gt;,&lt;weight&gt;,&lt;pump%&gt;,&lt;valve&gt;,&lt;heater&gt;,&lt;timer&gt;,&lt;tared&gt;
+
+</code></pre>
+<h2 id="🎮-user-interface">🎮 User Interface</h2>
+<h3 id="home-screen">Home Screen</h3>
+<ul>
+<li>
+<p><strong>Temperature Gauge</strong>: Circular display showing current boiler temperature</p>
+</li>
+<li>
+<p><strong>Operation Buttons</strong>: BREW, STEAM, FLUSH with visual feedback</p>
+</li>
+<li>
+<p><strong>Connection Status</strong>: Real-time hardware connection indicator</p>
+</li>
+<li>
+<p><strong>Emergency Stop</strong>: Always-accessible safety button</p>
+</li>
+</ul>
+<h3 id="brew-screen">Brew Screen</h3>
+<ul>
+<li>
+<p><strong>Real-time Charts</strong>: Coffee weight and pressure extraction curves</p>
+</li>
+<li>
+<p><strong>Status Display</strong>: Temperature, pump power, extraction time</p>
+</li>
+<li>
+<p><strong>Brew Control</strong>: Start/stop brewing with safety interlocks</p>
+</li>
+<li>
+<p><strong>Auto-scaling</strong>: Charts automatically adjust to data ranges</p>
+</li>
+</ul>
+<h3 id="settings-screen">Settings Screen</h3>
+<ul>
+<li>
+<p><strong>Temperature Control</strong>: Separate brew/steam temperature settings</p>
+</li>
+<li>
+<p><strong>Scale Management</strong>: Tare and calibration functions</p>
+</li>
+<li>
+<p><strong>Persistent Storage</strong>: Settings automatically saved</p>
+</li>
+</ul>
+<h2 id="⚙️-configuration">⚙️ Configuration</h2>
+<h3 id="config.py-settings"><code>config.py</code> Settings</h3>
+<pre class=" language-python"><code class="prism  language-python">
+<span class="token comment"># Serial Communication</span>
+
+USE_MOCK_SERIAL <span class="token operator">=</span> <span class="token boolean">False</span>
+
+SERIAL_PORT <span class="token operator">=</span> <span class="token boolean">None</span>  <span class="token comment"># Auto-detect</span>
+
+SERIAL_BAUD <span class="token operator">=</span> <span class="token number">115200</span>
+
+  
+
+<span class="token comment"># Temperature Limits</span>
+
+DEFAULT_BREW_TEMP <span class="token operator">=</span> <span class="token number">93.0</span>
+
+DEFAULT_STEAM_TEMP <span class="token operator">=</span> <span class="token number">130.0</span>
+
+MIN_BREW_TEMP <span class="token operator">=</span> <span class="token number">60.0</span>
+
+MAX_BREW_TEMP <span class="token operator">=</span> <span class="token number">110.0</span>
+
+  
+
+<span class="token comment"># Safety Limits</span>
+
+MAX_BREW_TIME <span class="token operator">=</span> <span class="token number">300</span>  <span class="token comment"># seconds</span>
+
+MAX_STEAM_TIME <span class="token operator">=</span> <span class="token number">600</span>  <span class="token comment"># seconds</span>
+
+COMM_TIMEOUT <span class="token operator">=</span> <span class="token number">10.0</span>  <span class="token comment"># seconds</span>
+
+  
+
+<span class="token comment"># UI Settings</span>
+
+WINDOW_WIDTH <span class="token operator">=</span> <span class="token number">1920</span>
+
+WINDOW_HEIGHT <span class="token operator">=</span> <span class="token number">1080</span>
+
+FULLSCREEN <span class="token operator">=</span> <span class="token boolean">True</span>
+
+HIDE_CURSOR <span class="token operator">=</span> <span class="token boolean">True</span>
+
+</code></pre>
+<h3 id="arduino-configuration-config.h">Arduino Configuration (<code>config.h</code>)</h3>
+<pre class=" language-cpp"><code class="prism  language-cpp">
+<span class="token comment">// Temperature Settings</span>
+
+<span class="token macro property">#<span class="token directive keyword">define</span> DEFAULT_BREW_TEMP 93.0</span>
+
+<span class="token macro property">#<span class="token directive keyword">define</span> DEFAULT_STEAM_TEMP 130.0</span>
+
+<span class="token macro property">#<span class="token directive keyword">define</span> MIN_TEMP 60.0</span>
+
+<span class="token macro property">#<span class="token directive keyword">define</span> MAX_BREW_TEMP 110.0</span>
+
+<span class="token macro property">#<span class="token directive keyword">define</span> MAX_STEAM_TEMP 150.0</span>
+
+  
+
+<span class="token comment">// Hardware Pins</span>
+
+<span class="token macro property">#<span class="token directive keyword">define</span> PUMP_PWM_PIN 9</span>
+
+<span class="token macro property">#<span class="token directive keyword">define</span> HEATER_PWM_PIN 15</span>
+
+<span class="token macro property">#<span class="token directive keyword">define</span> VALVE_PIN 8</span>
+
+<span class="token macro property">#<span class="token directive keyword">define</span> POT_PIN A0</span>
+
+  
+
+<span class="token comment">// Sensor Calibration</span>
+
+<span class="token macro property">#<span class="token directive keyword">define</span> SCALE_CALIB_0 420.0983</span>
+
+<span class="token macro property">#<span class="token directive keyword">define</span> SCALE_CALIB_1 421.365</span>
+
+<span class="token macro property">#<span class="token directive keyword">define</span> V_ZERO 0.5 </span><span class="token comment">// Pressure sensor zero voltage</span>
+
+</code></pre>
+<h2 id="🔒-safety-features">🔒 Safety Features</h2>
+<h3 id="hardware-safety">Hardware Safety</h3>
+<ul>
+<li>
+<p><strong>Temperature Monitoring</strong>: Continuous PT100 sensor reading with fault detection</p>
+</li>
+<li>
+<p><strong>Emergency Stop</strong>: Immediate shutdown of all heating/pumping</p>
+</li>
+<li>
+<p><strong>Timeout Protection</strong>: Automatic shutdown after maximum operation times</p>
+</li>
+<li>
+<p><strong>Communication Watchdog</strong>: Safety shutdown on communication loss</p>
+</li>
+</ul>
+<h3 id="software-safety">Software Safety</h3>
+<ul>
+<li>
+<p><strong>Input Validation</strong>: All temperature and timing parameters validated</p>
+</li>
+<li>
+<p><strong>State Machine</strong>: Controlled state transitions prevent unsafe operations</p>
+</li>
+<li>
+<p><strong>Error Handling</strong>: Comprehensive exception handling with user feedback</p>
+</li>
+<li>
+<p><strong>Data Integrity</strong>: Sensor data validation and fault detection</p>
+</li>
+</ul>
+<h2 id="📊-data-logging">📊 Data Logging</h2>
+<h3 id="log-files-location">Log Files Location</h3>
+<ul>
+<li>
+<p><strong>Sensor Data</strong>: <code>logs/silvia_YYYYMMDD_HHMMSS.log</code></p>
+</li>
+<li>
+<p><strong>Settings</strong>: <code>settings.json</code></p>
+</li>
+<li>
+<p><strong>Calibration</strong>: Stored in settings file</p>
+</li>
+</ul>
+<h3 id="log-format">Log Format</h3>
+<pre><code>
+TIMESTAMP,TEMP,PRESSURE,WEIGHT,STATE,PUMP_POWER
+
+2024-01-15 10:30:15,92.5,8.2,25.3,BREWING,85
+
+</code></pre>
+<h2 id="🛠️-development">🛠️ Development</h2>
+<h3 id="mock-mode">Mock Mode</h3>
+<p>For development without hardware:</p>
+<pre class=" language-bash"><code class="prism  language-bash">
+python  run_silvia.py  --mock
+
+</code></pre>
+<ul>
+<li>
+<p>Simulates sensor readings</p>
+</li>
+<li>
+<p>Responds to all commands</p>
+</li>
+<li>
+<p>Safe for UI development</p>
+</li>
+</ul>
+<h3 id="adding-new-features">Adding New Features</h3>
+<ol>
+<li>
+<p><strong>Hardware</strong>: Modify Arduino firmware and <code>config.h</code></p>
+</li>
+<li>
+<p><strong>Communication</strong>: Update protocol in both Arduino and Python</p>
+</li>
+<li>
+<p><strong>UI</strong>: Modify QML files for interface changes</p>
+</li>
+<li>
+<p><strong>Logic</strong>: Update backend controllers for new functionality</p>
+</li>
+</ol>
+<h3 id="debugging">Debugging</h3>
+<ul>
+<li>
+<p><strong>Serial Monitor</strong>: View Arduino debug output</p>
+</li>
+<li>
+<p><strong>Python Logging</strong>: Check console output for errors</p>
+</li>
+<li>
+<p><strong>QML Debugging</strong>: Enable Qt debugging for UI issues</p>
+</li>
+</ul>
+<h2 id="🔧-troubleshooting">🔧 Troubleshooting</h2>
+<h3 id="common-issues">Common Issues</h3>
+<p><strong>Connection Problems</strong></p>
+<ul>
+<li>
+<p>Check USB cable and port</p>
+</li>
+<li>
+<p>Verify Arduino is programmed correctly</p>
+</li>
+<li>
+<p>Try different baud rates</p>
+</li>
+<li>
+<p>Use mock mode to test UI</p>
+</li>
+</ul>
+<p><strong>Temperature Reading Issues</strong></p>
+<ul>
+<li>
+<p>Check PT100 wiring (3-wire configuration)</p>
+</li>
+<li>
+<p>Verify MAX31865 connections</p>
+</li>
+<li>
+<p>Clear sensor faults in Arduino code</p>
+</li>
+</ul>
+<p><strong>Pressure Sensor Problems</strong></p>
+<ul>
+<li>
+<p>Calibrate zero pressure voltage</p>
+</li>
+<li>
+<p>Check I2C connections (SDA/SCL)</p>
+</li>
+<li>
+<p>Verify ADS1115 initialization</p>
+</li>
+</ul>
+<p><strong>Scale Calibration</strong></p>
+<ul>
+<li>
+<p>Tare scales before calibration</p>
+</li>
+<li>
+<p>Use known weights for calibration</p>
+</li>
+<li>
+<p>Check HX711 wiring and power</p>
+</li>
+</ul>
+<h3 id="error-codes">Error Codes</h3>
+<ul>
+<li>
+<p><code>PT100_FAULT</code>: Temperature sensor malfunction</p>
+</li>
+<li>
+<p><code>ADS1115_INIT_FAILED</code>: Pressure sensor initialization failed</p>
+</li>
+<li>
+<p><code>COMM_TIMEOUT</code>: Communication lost with Arduino</p>
+</li>
+<li>
+<p><code>OVERHEAT</code>: Temperature exceeded safety limits</p>
+</li>
+</ul>
+<h2 id="📈-performance">📈 Performance</h2>
+<h3 id="system-requirements">System Requirements</h3>
+<ul>
+<li>
+<p><strong>CPU</strong>: Dual-core 1GHz+ (Raspberry Pi 4 compatible)</p>
+</li>
+<li>
+<p><strong>RAM</strong>: 1GB minimum, 2GB recommended</p>
+</li>
+<li>
+<p><strong>Storage</strong>: 100MB for application, additional for logs</p>
+</li>
+<li>
+<p><strong>Display</strong>: 1920x1080 touchscreen recommended</p>
+</li>
+</ul>
+<h3 id="response-times">Response Times</h3>
+<ul>
+<li>
+<p><strong>Sensor Updates</strong>: 250ms telemetry interval</p>
+</li>
+<li>
+<p><strong>UI Refresh</strong>: 60 FPS smooth animations</p>
+</li>
+<li>
+<p><strong>Command Response</strong>: &lt;100ms typical</p>
+</li>
+<li>
+<p><strong>Safety Checks</strong>: 1 second intervals</p>
+</li>
+</ul>
+<h2 id="🤝-contributing">🤝 Contributing</h2>
+<ol>
+<li>
+<p>Fork the repository</p>
+</li>
+<li>
+<p>Create feature branch (<code>git checkout -b feature/new-feature</code>)</p>
+</li>
+<li>
+<p>Commit changes (<code>git commit -am 'Add new feature'</code>)</p>
+</li>
+<li>
+<p>Push to branch (<code>git push origin feature/new-feature</code>)</p>
+</li>
+<li>
+<p>Create Pull Request</p>
+</li>
+</ol>
+<h3 id="code-style">Code Style</h3>
+<ul>
+<li>
+<p><strong>Python</strong>: Follow PEP 8</p>
+</li>
+<li>
+<p><strong>C++</strong>: Arduino style conventions</p>
+</li>
+<li>
+<p><strong>QML</strong>: Qt coding conventions</p>
+</li>
+<li>
+<p><strong>Comments</strong>: Document all public interfaces</p>
+</li>
+</ul>
+<h2 id="📄-license">📄 License</h2>
+<p>This project is licensed under the MIT License - see the LICENSE file for details.</p>
+<h2 id="🙏-acknowledgments">🙏 Acknowledgments</h2>
+<ul>
+<li>
+<p>Adafruit for MAX31865 library</p>
+</li>
+<li>
+<p>Arduino community for HX711 and ADS1115 libraries</p>
+</li>
+<li>
+<p>Qt/PyQt6 for excellent GUI framework</p>
+</li>
+<li>
+<p>Coffee enthusiasts worldwide for inspiration</p>
+</li>
+</ul>
+<hr>
+<p><strong>⚠️ Safety Notice</strong>: This system controls high-temperature and high-pressure equipment. Always follow proper safety procedures and local electrical codes when installing and operating.</p>
+</div>
+</body>
+
+</html>

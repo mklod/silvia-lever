@@ -1,0 +1,45 @@
+#set up environment
+sudo apt update
+sudo apt upgrade
+
+sudo apt install -y python3 python3-pip python3-venv qt6-base-dev qt6-declarative-dev qml-module-qtquick-controls qml-module-qtquick-controls2 qml-module-qtquick-shapes
+
+#install package
+sudo apt update
+sudo apt install python3-pyqt6 pyqt6-dev-tools python3-serial
+
+sudo apt install -y libqt6qml6
+sudo apt install -y python3-pyqt6.qtqml python3-pyqt6.qtquick qml6-module-qtquick qml6-module-qtquick-window qml6-module-qtquick-layouts qml6-module-qtquick-controls qml6-module-qtquick-templates qml6-module-qtquick-controls-material qml6-module-qtqml-workerscript
+
+sudo apt install -y qt6-svg-dev qml-module-qtquick-shapes
+sudo apt install -y libxcb-xinerama0 libxcb1 libx11-6 libxext6 libxrender1 libxcb-render0 libxcb-shape0 libxcb-xfixes0 libxcb-shm0 libxkbcommon0 libxkbcommon-x11-0
+
+sudo apt install -y libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-randr0 libxcb-render-util0 libxcb-util1 libxcb-xkb1 libxcb-cursor0
+
+sudo apt install qtwayland5
+
+python3 -m venv .venv --system-site-packages
+source .venv/bin/activate
+pip3 install pyserial pyinstaller
+
+#build the app---> must in the project folder
+pyinstaller --noconfirm --onefile --windowed --add-data "main.qml:." --add-data "controls:controls" --add-data "svgs:svgs" run_silvia.py
+
+#test if it runs
+python run_silvia.py
+
+./dist/run_silvia
+
+#  -----------------------------------  OPTIONNAL When app doesn't work  -------------------------------
+#--> Use this command if the system didn't find xcb
+#QT_QPA_PLATFORM=xcb python run_silvia.py
+#QT_QPA_PLATFORM=xcb ./dist/run_silvia
+
+QT_QPA_PLATFORM=offscreen ./dist/run_silvia
+
+# ------------> Optional please confirm that you’re in GUI mode(If you are in consoles mode, the app will not work) <---------------
+#echo $DISPLAY
+# -------------> If $DISPLAY is empty → enable GUI: <-----------------
+#sudo raspi-config
+# -------------> System Options → Boot / Auto Login → Desktop Autologin <-------------
+# --------------> Reboot. <--------------------------

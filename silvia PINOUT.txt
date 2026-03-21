@@ -1,0 +1,30 @@
+
+teensy 4.0
+
+A0 // D14 read potentiometer (user input )
+9 // PWM output (0v-5v) to motor controller (pump speed)
+
+//PT1000 over SPI via MAX31865 (dual sensors, shared bus)
+10 CS  (thermoblock PT1000)
+ 6 CS  (steam boiler PT1000)
+11 MOSI
+12 MISO
+13 CLK
+
+//pressure sensor over I2C via ADS1115
+//scales via NAU7802
+18 SDA
+19 SCL
+
+
+15 //SSR1 for thermoblock / BREW heating element
+16 //SSR2 for boiler / STEAM heating element
+
+
+21 // valve 1 switching (VALVE_PUMP)
+20 // valve 2 switching (VALVE_THERMOBLOCK)
+
+
+	
+	
+	

@@ -1,0 +1,946 @@
+﻿<!DOCTYPE html>
+<html>
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Welcome file</title>
+  <link rel="stylesheet" href="https://stackedit.io/style.css" />
+</head>
+
+<body class="stackedit">
+  <div class="stackedit__html"><h1 id="silvia-coffee-machine---installation-guide">Silvia Coffee Machine - Installation Guide</h1>
+<h2 id="📋-prerequisites">📋 Prerequisites</h2>
+<h3 id="hardware-requirements">Hardware Requirements</h3>
+<ul>
+<li>
+<p><strong>Microcontroller</strong>: Teensy 4.0 or Arduino-compatible board</p>
+</li>
+<li>
+<p><strong>Display</strong>: 1920x1080 touchscreen (recommended)</p>
+</li>
+<li>
+<p><strong>Computer</strong>: Raspberry Pi 4 or PC with USB port</p>
+</li>
+<li>
+<p><strong>Sensors</strong>: PT100, pressure sensor, dual load cells</p>
+</li>
+<li>
+<p><strong>Actuators</strong>: Water pump, heater element, solenoid valve</p>
+</li>
+<li>
+<p><strong>Power Supply</strong>: 12V/24V for actuators, 5V for electronics</p>
+</li>
+</ul>
+<h3 id="software-requirements">Software Requirements</h3>
+<ul>
+<li>
+<p><strong>Python</strong>: 3.8 or higher</p>
+</li>
+<li>
+<p><strong>Operating System</strong>: Windows 10+, Linux, or macOS</p>
+</li>
+<li>
+<p><strong>Arduino IDE</strong>: Latest version with library support</p>
+</li>
+<li>
+<p><strong>USB Drivers</strong>: For Teensy/Arduino communication</p>
+</li>
+</ul>
+<h2 id="🔧-hardware-installation">🔧 Hardware Installation</h2>
+<h3 id="step-1-microcontroller-setup">Step 1: Microcontroller Setup</h3>
+<h4 id="teensy-4.0-pin-connections">Teensy 4.0 Pin Connections</h4>
+<pre><code>
+Temperature Sensor (PT100 via MAX31865):
+
+├── CS → Pin 10
+
+├── MOSI → Pin 11
+
+├── MISO → Pin 12
+
+└── CLK → Pin 13
+
+  
+
+Pressure Sensor (via ADS1115):
+
+├── SDA → Pin 18
+
+└── SCL → Pin 19
+
+  
+
+Load Cells (via HX711):
+
+├── Scale 0 Data → Pin 20
+
+├── Scale 1 Data → Pin 22
+
+└── Clock (shared) → Pin 21
+
+  
+
+Control Outputs:
+
+├── Pump PWM → Pin 9
+
+├── Heater PWM → Pin 15
+
+├── Valve Relay → Pin 8
+
+└── Potentiometer → Pin A0
+
+</code></pre>
+<h4 id="wiring-diagram">Wiring Diagram</h4>
+<pre><code>
+[Teensy 4.0]
+
+│
+
+├─[MAX31865]─[PT100 Sensor]
+
+├─[ADS1115]─[Pressure Sensor]
+
+├─[HX711 #1]─[Load Cell #1]
+
+├─[HX711 #2]─[Load Cell #2]
+
+├─[PWM]─[Pump Motor Driver]
+
+├─[PWM]─[SSR]─[Heater Element]
+
+└─[Digital]─[Relay]─[Solenoid Valve]
+
+</code></pre>
+<h3 id="step-2-sensor-installation">Step 2: Sensor Installation</h3>
+<h4 id="pt100-temperature-sensor">PT100 Temperature Sensor</h4>
+<ol>
+<li>
+<p><strong>Mounting</strong>: Install in boiler with thermal compound</p>
+</li>
+<li>
+<p><strong>Wiring</strong>: Use 3-wire configuration</p>
+</li>
+</ol>
+<ul>
+<li>
+<p>Red: RTD+</p>
+</li>
+<li>
+<p>White: RTD-</p>
+</li>
+<li>
+<p>Black: RTD- (jumpered to white)</p>
+</li>
+</ul>
+<ol start="3">
+<li><strong>Shielding</strong>: Use shielded cable to prevent interference</li>
+</ol>
+<h4 id="pressure-sensor-honeywell-mip">Pressure Sensor (Honeywell MIP)</h4>
+<ol>
+<li>
+<p><strong>Mounting</strong>: Install in water line before group head</p>
+</li>
+<li>
+<p><strong>Wiring</strong>:</p>
+</li>
+</ol>
+<ul>
+<li>
+<p>VCC: 5V</p>
+</li>
+<li>
+<p>GND: Ground</p>
+</li>
+<li>
+<p>OUT: Analog output to ADS1115</p>
+</li>
+</ul>
+<ol start="3">
+<li><strong>Calibration</strong>: Ensure zero pressure at startup</li>
+</ol>
+<h4 id="load-cells">Load Cells</h4>
+<ol>
+<li>
+<p><strong>Mounting</strong>: Install under drip tray or cup platform</p>
+</li>
+<li>
+<p><strong>Mechanical</strong>: Ensure rigid mounting, prevent side loads</p>
+</li>
+<li>
+<p><strong>Wiring</strong>: Follow HX711 color code</p>
+</li>
+</ol>
+<ul>
+<li>
+<p>Red: E+</p>
+</li>
+<li>
+<p>Black: E-</p>
+</li>
+<li>
+<p>White: A-</p>
+</li>
+<li>
+<p>Green: A+</p>
+</li>
+</ul>
+<h3 id="step-3-actuator-installation">Step 3: Actuator Installation</h3>
+<h4 id="water-pump">Water Pump</h4>
+<ol>
+<li>
+<p><strong>Power</strong>: Connect to 12V/24V supply via PWM driver</p>
+</li>
+<li>
+<p><strong>Control</strong>: PWM signal from Teensy Pin 9</p>
+</li>
+<li>
+<p><strong>Safety</strong>: Install pressure relief valve</p>
+</li>
+<li>
+<p><strong>Plumbing</strong>: Use food-grade tubing and fittings</p>
+</li>
+</ol>
+<h4 id="heater-element">Heater Element</h4>
+<ol>
+<li>
+<p><strong>Power</strong>: Connect via Solid State Relay (SSR)</p>
+</li>
+<li>
+<p><strong>Control</strong>: PWM signal from Teensy Pin 15</p>
+</li>
+<li>
+<p><strong>Safety</strong>: Install thermal fuse and proper grounding</p>
+</li>
+<li>
+<p><strong>Insulation</strong>: Ensure proper thermal insulation</p>
+</li>
+</ol>
+<h4 id="solenoid-valve">Solenoid Valve</h4>
+<ol>
+<li>
+<p><strong>Power</strong>: 12V/24V via relay module</p>
+</li>
+<li>
+<p><strong>Control</strong>: Digital signal from Teensy Pin 8</p>
+</li>
+<li>
+<p><strong>Position</strong>: Install in water line to group head</p>
+</li>
+<li>
+<p><strong>Flow Direction</strong>: Ensure correct flow direction</p>
+</li>
+</ol>
+<h3 id="step-4-power-supply-setup">Step 4: Power Supply Setup</h3>
+<h4 id="power-distribution">Power Distribution</h4>
+<pre><code>
+Main Power (120V/240V AC)
+
+├── Heater Element (direct, via SSR)
+
+├── 24V Supply
+
+│ ├── Water Pump
+
+│ └── Solenoid Valve
+
+└── 5V Supply
+
+├── Teensy 4.0
+
+├── Sensors
+
+└── Display (if USB powered)
+
+</code></pre>
+<h4 id="safety-considerations">Safety Considerations</h4>
+<ul>
+<li>
+<p><strong>GFCI Protection</strong>: Install GFCI breaker for all AC circuits</p>
+</li>
+<li>
+<p><strong>Grounding</strong>: Proper grounding for all metal components</p>
+</li>
+<li>
+<p><strong>Fusing</strong>: Individual fuses for each circuit</p>
+</li>
+<li>
+<p><strong>Emergency Stop</strong>: Hardware emergency stop switch</p>
+</li>
+</ul>
+<h2 id="💻-software-installation">💻 Software Installation</h2>
+<h3 id="step-1-arduino-firmware">Step 1: Arduino Firmware</h3>
+<h4 id="install-arduino-ide">Install Arduino IDE</h4>
+<ol>
+<li>
+<p>Download from <a href="https://www.arduino.cc/en/software">arduino.cc</a></p>
+</li>
+<li>
+<p>Install Teensyduino add-on for Teensy support</p>
+</li>
+<li>
+<p>Configure board settings:</p>
+</li>
+</ol>
+<ul>
+<li>
+<p>Board: Teensy 4.0</p>
+</li>
+<li>
+<p>USB Type: Serial</p>
+</li>
+<li>
+<p>CPU Speed: 600 MHz</p>
+</li>
+</ul>
+<h4 id="install-required-libraries">Install Required Libraries</h4>
+<pre class=" language-bash"><code class="prism  language-bash">
+<span class="token comment"># Via Arduino Library Manager:</span>
+
+-  Adafruit  MAX31865  library
+
+-  ADS1115_WE  by  Wolfgang  Ewald
+
+-  HX711  Arduino  Library
+
+</code></pre>
+<h4 id="upload-firmware">Upload Firmware</h4>
+<ol>
+<li>
+<p>Open <code>silvia_lever_main/silvia_lever_main.ino</code></p>
+</li>
+<li>
+<p>Verify pin assignments in <code>config.h</code></p>
+</li>
+<li>
+<p>Compile and upload to Teensy</p>
+</li>
+<li>
+<p>Monitor serial output for “READY” message</p>
+</li>
+</ol>
+<h4 id="verify-hardware-communication">Verify Hardware Communication</h4>
+<pre><code>
+Expected Serial Output:
+
+Adafruit MAX31865 PT100 Sensor Started!
+
+Calibrating... Keep sensor at zero pressure!
+
+Calibrated Zero Voltage: 0.512
+
+READY
+
+</code></pre>
+<h3 id="step-2-python-application">Step 2: Python Application</h3>
+<h4 id="system-requirements">System Requirements</h4>
+<pre class=" language-bash"><code class="prism  language-bash">
+<span class="token comment"># Ubuntu/Debian</span>
+
+<span class="token function">sudo</span>  apt  update
+
+<span class="token function">sudo</span>  apt  <span class="token function">install</span>  python3  python3-pip  python3-venv
+
+  
+
+<span class="token comment"># Windows</span>
+
+<span class="token comment"># Download Python 3.8+ from python.org</span>
+
+  
+
+<span class="token comment"># macOS</span>
+
+brew  <span class="token function">install</span>  python3
+
+</code></pre>
+<h4 id="create-virtual-environment">Create Virtual Environment</h4>
+<pre class=" language-bash"><code class="prism  language-bash">
+<span class="token function">cd</span>  silvia-coffee-machine/source/pyqt6
+
+python3  -m  venv  venv
+
+<span class="token function">source</span>  venv/bin/activate  <span class="token comment"># Linux/Mac</span>
+
+venv\Scripts\activate  <span class="token comment"># Windows</span>
+
+</code></pre>
+<h4 id="install-dependencies">Install Dependencies</h4>
+<pre class=" language-bash"><code class="prism  language-bash">
+pip  <span class="token function">install</span>  --upgrade  pip
+
+pip  <span class="token function">install</span>  PyQt6  pyserial
+
+</code></pre>
+<h4 id="configure-application">Configure Application</h4>
+<p>Edit <code>config.py</code>:</p>
+<pre class=" language-python"><code class="prism  language-python">
+<span class="token comment"># Serial Communication</span>
+
+USE_MOCK_SERIAL <span class="token operator">=</span> <span class="token boolean">False</span>  <span class="token comment"># Set to False for hardware</span>
+
+SERIAL_PORT <span class="token operator">=</span> <span class="token string">"/dev/ttyACM0"</span>  <span class="token comment"># Linux</span>
+
+<span class="token comment"># SERIAL_PORT = "COM3" # Windows</span>
+
+SERIAL_BAUD <span class="token operator">=</span> <span class="token number">115200</span>
+
+  
+
+<span class="token comment"># Display Settings</span>
+
+FULLSCREEN <span class="token operator">=</span> <span class="token boolean">True</span>
+
+HIDE_CURSOR <span class="token operator">=</span> <span class="token boolean">True</span>
+
+WINDOW_WIDTH <span class="token operator">=</span> <span class="token number">1920</span>
+
+WINDOW_HEIGHT <span class="token operator">=</span> <span class="token number">1080</span>
+
+</code></pre>
+<h4 id="test-installation">Test Installation</h4>
+<pre class=" language-bash"><code class="prism  language-bash">
+<span class="token comment"># Test with mock mode first</span>
+
+python  run_silvia.py  --mock  --fullscreen
+
+  
+
+<span class="token comment"># Test with hardware</span>
+
+python  run_silvia.py  --port  /dev/ttyACM0  --fullscreen
+
+</code></pre>
+<h3 id="step-3-system-integration">Step 3: System Integration</h3>
+<h4 id="auto-start-configuration-linux">Auto-Start Configuration (Linux)</h4>
+<p>Create systemd service:</p>
+<pre class=" language-bash"><code class="prism  language-bash">
+<span class="token function">sudo</span>  <span class="token function">nano</span>  /etc/systemd/system/silvia-coffee.service
+
+</code></pre>
+<pre class=" language-ini"><code class="prism  language-ini">
+<span class="token selector">[Unit]</span>
+
+<span class="token constant">Description</span><span class="token attr-value"><span class="token punctuation">=</span>Silvia Coffee Machine</span>
+
+<span class="token constant">After</span><span class="token attr-value"><span class="token punctuation">=</span>graphical-session.target</span>
+
+  
+
+<span class="token selector">[Service]</span>
+
+<span class="token constant">Type</span><span class="token attr-value"><span class="token punctuation">=</span>simple</span>
+
+<span class="token constant">User</span><span class="token attr-value"><span class="token punctuation">=</span>pi</span>
+
+<span class="token constant">WorkingDirectory</span><span class="token attr-value"><span class="token punctuation">=</span>/home/pi/silvia-coffee-machine/source/pyqt6</span>
+
+<span class="token constant">ExecStart</span><span class="token attr-value"><span class="token punctuation">=</span>/home/pi/silvia-coffee-machine/source/pyqt6/venv/bin/python run_silvia.py --fullscreen</span>
+
+<span class="token constant">Restart</span><span class="token attr-value"><span class="token punctuation">=</span>always</span>
+
+<span class="token constant">Environment</span><span class="token attr-value"><span class="token punctuation">=</span>DISPLAY=:0</span>
+
+  
+
+<span class="token selector">[Install]</span>
+
+<span class="token constant">WantedBy</span><span class="token attr-value"><span class="token punctuation">=</span>graphical-session.target</span>
+
+</code></pre>
+<p>Enable service:</p>
+<pre class=" language-bash"><code class="prism  language-bash">
+<span class="token function">sudo</span>  systemctl  <span class="token function">enable</span>  silvia-coffee.service
+
+<span class="token function">sudo</span>  systemctl  start  silvia-coffee.service
+
+</code></pre>
+<h4 id="touchscreen-calibration-linux">Touchscreen Calibration (Linux)</h4>
+<pre class=" language-bash"><code class="prism  language-bash">
+<span class="token comment"># Install calibration tools</span>
+
+<span class="token function">sudo</span>  apt  <span class="token function">install</span>  xinput-calibrator
+
+  
+
+<span class="token comment"># Run calibration</span>
+
+xinput_calibrator
+
+  
+
+<span class="token comment"># Save calibration to xorg.conf</span>
+
+</code></pre>
+<h2 id="🔧-configuration">🔧 Configuration</h2>
+<h3 id="hardware-calibration">Hardware Calibration</h3>
+<h4 id="temperature-sensor-verification">Temperature Sensor Verification</h4>
+<ol>
+<li>
+<p><strong>Ice Bath Test</strong>: Verify 0°C reading</p>
+</li>
+<li>
+<p><strong>Boiling Water Test</strong>: Verify 100°C reading</p>
+</li>
+<li>
+<p><strong>Adjust if necessary</strong>: Modify RNOMINAL in config.h</p>
+</li>
+</ol>
+<h4 id="pressure-sensor-calibration">Pressure Sensor Calibration</h4>
+<ol>
+<li>
+<p><strong>Zero Calibration</strong>: Automatic on startup</p>
+</li>
+<li>
+<p><strong>Full Scale</strong>: Apply known pressure, verify reading</p>
+</li>
+<li>
+<p><strong>Adjust constants</strong>: Modify V_MAX and P_MAX in config.h</p>
+</li>
+</ol>
+<h4 id="scale-calibration">Scale Calibration</h4>
+<ol>
+<li>
+<p><strong>Tare</strong>: Use “TARE” button in settings</p>
+</li>
+<li>
+<p><strong>Calibrate</strong>: Place known weight, use “CAL” button</p>
+</li>
+<li>
+<p><strong>Verify</strong>: Test with different weights</p>
+</li>
+</ol>
+<h3 id="software-configuration">Software Configuration</h3>
+<h4 id="temperature-settings">Temperature Settings</h4>
+<pre class=" language-python"><code class="prism  language-python">
+<span class="token comment"># Default temperatures (°C)</span>
+
+DEFAULT_BREW_TEMP <span class="token operator">=</span> <span class="token number">93.0</span>
+
+DEFAULT_STEAM_TEMP <span class="token operator">=</span> <span class="token number">130.0</span>
+
+  
+
+<span class="token comment"># Safety limits</span>
+
+MIN_BREW_TEMP <span class="token operator">=</span> <span class="token number">60.0</span>
+
+MAX_BREW_TEMP <span class="token operator">=</span> <span class="token number">110.0</span>
+
+MIN_STEAM_TEMP <span class="token operator">=</span> <span class="token number">110.0</span>
+
+MAX_STEAM_TEMP <span class="token operator">=</span> <span class="token number">150.0</span>
+
+</code></pre>
+<h4 id="safety-settings">Safety Settings</h4>
+<pre class=" language-python"><code class="prism  language-python">
+<span class="token comment"># Maximum operation times (seconds)</span>
+
+MAX_BREW_TIME <span class="token operator">=</span> <span class="token number">300</span>  <span class="token comment"># 5 minutes</span>
+
+MAX_STEAM_TIME <span class="token operator">=</span> <span class="token number">600</span>  <span class="token comment"># 10 minutes</span>
+
+  
+
+<span class="token comment"># Communication timeout</span>
+
+COMM_TIMEOUT <span class="token operator">=</span> <span class="token number">10.0</span>  <span class="token comment"># 10 seconds</span>
+
+</code></pre>
+<h4 id="display-settings">Display Settings</h4>
+<pre class=" language-python"><code class="prism  language-python">
+<span class="token comment"># UI Configuration</span>
+
+WINDOW_WIDTH <span class="token operator">=</span> <span class="token number">1920</span>
+
+WINDOW_HEIGHT <span class="token operator">=</span> <span class="token number">1080</span>
+
+FULLSCREEN <span class="token operator">=</span> <span class="token boolean">True</span>
+
+HIDE_CURSOR <span class="token operator">=</span> <span class="token boolean">True</span>  <span class="token comment"># For touchscreen deployment</span>
+
+</code></pre>
+<h2 id="🧪-testing-and-validation">🧪 Testing and Validation</h2>
+<h3 id="pre-operation-checklist">Pre-Operation Checklist</h3>
+<h4 id="hardware-tests">Hardware Tests</h4>
+<ul>
+<li class="task-list-item">
+<p><input type="checkbox" class="task-list-item-checkbox" disabled=""> All sensors reading reasonable values</p>
+</li>
+<li class="task-list-item">
+<p><input type="checkbox" class="task-list-item-checkbox" disabled=""> Temperature sensor responds to heat</p>
+</li>
+<li class="task-list-item">
+<p><input type="checkbox" class="task-list-item-checkbox" disabled=""> Pressure sensor responds to pressure</p>
+</li>
+<li class="task-list-item">
+<p><input type="checkbox" class="task-list-item-checkbox" disabled=""> Scales respond to weight changes</p>
+</li>
+<li class="task-list-item">
+<p><input type="checkbox" class="task-list-item-checkbox" disabled=""> Pump operates at various PWM levels</p>
+</li>
+<li class="task-list-item">
+<p><input type="checkbox" class="task-list-item-checkbox" disabled=""> Heater responds to PWM control</p>
+</li>
+<li class="task-list-item">
+<p><input type="checkbox" class="task-list-item-checkbox" disabled=""> Valve opens and closes properly</p>
+</li>
+<li class="task-list-item">
+<p><input type="checkbox" class="task-list-item-checkbox" disabled=""> Emergency stop functions correctly</p>
+</li>
+</ul>
+<h4 id="software-tests">Software Tests</h4>
+<ul>
+<li class="task-list-item">
+<p><input type="checkbox" class="task-list-item-checkbox" disabled=""> Application starts without errors</p>
+</li>
+<li class="task-list-item">
+<p><input type="checkbox" class="task-list-item-checkbox" disabled=""> Serial communication established</p>
+</li>
+<li class="task-list-item">
+<p><input type="checkbox" class="task-list-item-checkbox" disabled=""> All UI screens accessible</p>
+</li>
+<li class="task-list-item">
+<p><input type="checkbox" class="task-list-item-checkbox" disabled=""> Real-time data updates</p>
+</li>
+<li class="task-list-item">
+<p><input type="checkbox" class="task-list-item-checkbox" disabled=""> Settings save and restore</p>
+</li>
+<li class="task-list-item">
+<p><input type="checkbox" class="task-list-item-checkbox" disabled=""> Error dialogs display properly</p>
+</li>
+<li class="task-list-item">
+<p><input type="checkbox" class="task-list-item-checkbox" disabled=""> Charts update during operation</p>
+</li>
+</ul>
+<h4 id="safety-tests">Safety Tests</h4>
+<ul>
+<li class="task-list-item">
+<p><input type="checkbox" class="task-list-item-checkbox" disabled=""> Emergency stop immediately stops all operations</p>
+</li>
+<li class="task-list-item">
+<p><input type="checkbox" class="task-list-item-checkbox" disabled=""> Overheat protection triggers at set temperature</p>
+</li>
+<li class="task-list-item">
+<p><input type="checkbox" class="task-list-item-checkbox" disabled=""> Communication timeout triggers safety stop</p>
+</li>
+<li class="task-list-item">
+<p><input type="checkbox" class="task-list-item-checkbox" disabled=""> Maximum operation times enforced</p>
+</li>
+<li class="task-list-item">
+<p><input type="checkbox" class="task-list-item-checkbox" disabled=""> All error conditions handled gracefully</p>
+</li>
+</ul>
+<h3 id="functional-testing">Functional Testing</h3>
+<h4 id="brew-cycle-test">Brew Cycle Test</h4>
+<ol>
+<li>
+<p><strong>Start Application</strong>: Verify connection status</p>
+</li>
+<li>
+<p><strong>Set Temperature</strong>: Adjust brew temperature</p>
+</li>
+<li>
+<p><strong>Start Heating</strong>: Press BREW button</p>
+</li>
+<li>
+<p><strong>Monitor Progress</strong>: Watch temperature rise</p>
+</li>
+<li>
+<p><strong>Begin Brewing</strong>: Press BREW NOW when ready</p>
+</li>
+<li>
+<p><strong>Monitor Extraction</strong>: Watch weight and pressure charts</p>
+</li>
+<li>
+<p><strong>Stop Brewing</strong>: Press STOP button</p>
+</li>
+<li>
+<p><strong>Verify Data</strong>: Check logged data</p>
+</li>
+</ol>
+<h4 id="steam-cycle-test">Steam Cycle Test</h4>
+<ol>
+<li>
+<p><strong>Set Steam Temperature</strong>: Adjust in settings</p>
+</li>
+<li>
+<p><strong>Start Steam Mode</strong>: Press STEAM button</p>
+</li>
+<li>
+<p><strong>Monitor Heating</strong>: Watch temperature rise</p>
+</li>
+<li>
+<p><strong>Test Steam Function</strong>: Verify steam production</p>
+</li>
+<li>
+<p><strong>Stop Steam</strong>: Press STOP button</p>
+</li>
+</ol>
+<h4 id="flush-cycle-test">Flush Cycle Test</h4>
+<ol>
+<li>
+<p><strong>Start Flush</strong>: Press FLUSH button</p>
+</li>
+<li>
+<p><strong>Monitor Operation</strong>: Verify pump and valve operation</p>
+</li>
+<li>
+<p><strong>Stop Flush</strong>: Press STOP button</p>
+</li>
+</ol>
+<h2 id="🚨-safety-verification">🚨 Safety Verification</h2>
+<h3 id="electrical-safety">Electrical Safety</h3>
+<ul>
+<li class="task-list-item">
+<p><input type="checkbox" class="task-list-item-checkbox" disabled=""> All AC wiring properly insulated</p>
+</li>
+<li class="task-list-item">
+<p><input type="checkbox" class="task-list-item-checkbox" disabled=""> GFCI protection installed and tested</p>
+</li>
+<li class="task-list-item">
+<p><input type="checkbox" class="task-list-item-checkbox" disabled=""> Proper grounding verified</p>
+</li>
+<li class="task-list-item">
+<p><input type="checkbox" class="task-list-item-checkbox" disabled=""> No exposed live conductors</p>
+</li>
+<li class="task-list-item">
+<p><input type="checkbox" class="task-list-item-checkbox" disabled=""> Emergency stop accessible</p>
+</li>
+</ul>
+<h3 id="thermal-safety">Thermal Safety</h3>
+<ul>
+<li class="task-list-item">
+<p><input type="checkbox" class="task-list-item-checkbox" disabled=""> Heater element properly insulated</p>
+</li>
+<li class="task-list-item">
+<p><input type="checkbox" class="task-list-item-checkbox" disabled=""> Thermal fuse installed</p>
+</li>
+<li class="task-list-item">
+<p><input type="checkbox" class="task-list-item-checkbox" disabled=""> Overheat protection tested</p>
+</li>
+<li class="task-list-item">
+<p><input type="checkbox" class="task-list-item-checkbox" disabled=""> Safe surface temperatures</p>
+</li>
+</ul>
+<h3 id="pressure-safety">Pressure Safety</h3>
+<ul>
+<li class="task-list-item">
+<p><input type="checkbox" class="task-list-item-checkbox" disabled=""> Pressure relief valve installed</p>
+</li>
+<li class="task-list-item">
+<p><input type="checkbox" class="task-list-item-checkbox" disabled=""> Maximum pressure limits set</p>
+</li>
+<li class="task-list-item">
+<p><input type="checkbox" class="task-list-item-checkbox" disabled=""> Pressure sensor calibrated</p>
+</li>
+<li class="task-list-item">
+<p><input type="checkbox" class="task-list-item-checkbox" disabled=""> No pressure leaks</p>
+</li>
+</ul>
+<h3 id="software-safety">Software Safety</h3>
+<ul>
+<li class="task-list-item">
+<p><input type="checkbox" class="task-list-item-checkbox" disabled=""> Emergency stop tested</p>
+</li>
+<li class="task-list-item">
+<p><input type="checkbox" class="task-list-item-checkbox" disabled=""> Timeout protections verified</p>
+</li>
+<li class="task-list-item">
+<p><input type="checkbox" class="task-list-item-checkbox" disabled=""> Error handling tested</p>
+</li>
+<li class="task-list-item">
+<p><input type="checkbox" class="task-list-item-checkbox" disabled=""> Safe startup state confirmed</p>
+</li>
+</ul>
+<h2 id="📝-documentation">📝 Documentation</h2>
+<h3 id="create-system-documentation">Create System Documentation</h3>
+<ol>
+<li>
+<p><strong>Hardware Configuration</strong>: Document all connections</p>
+</li>
+<li>
+<p><strong>Calibration Values</strong>: Record all sensor calibrations</p>
+</li>
+<li>
+<p><strong>Settings</strong>: Document all configuration parameters</p>
+</li>
+<li>
+<p><strong>Maintenance Schedule</strong>: Create maintenance checklist</p>
+</li>
+</ol>
+<h3 id="user-training">User Training</h3>
+<ol>
+<li>
+<p><strong>Basic Operation</strong>: Train users on normal operation</p>
+</li>
+<li>
+<p><strong>Safety Procedures</strong>: Emphasize safety protocols</p>
+</li>
+<li>
+<p><strong>Emergency Procedures</strong>: Train on emergency stop</p>
+</li>
+<li>
+<p><strong>Maintenance</strong>: Basic cleaning and maintenance</p>
+</li>
+</ol>
+<h2 id="🔧-maintenance">🔧 Maintenance</h2>
+<h3 id="daily-maintenance">Daily Maintenance</h3>
+<ul>
+<li class="task-list-item">
+<p><input type="checkbox" class="task-list-item-checkbox" disabled=""> Visual inspection of all connections</p>
+</li>
+<li class="task-list-item">
+<p><input type="checkbox" class="task-list-item-checkbox" disabled=""> Check for leaks</p>
+</li>
+<li class="task-list-item">
+<p><input type="checkbox" class="task-list-item-checkbox" disabled=""> Verify normal operation</p>
+</li>
+<li class="task-list-item">
+<p><input type="checkbox" class="task-list-item-checkbox" disabled=""> Clean exterior surfaces</p>
+</li>
+</ul>
+<h3 id="weekly-maintenance">Weekly Maintenance</h3>
+<ul>
+<li class="task-list-item">
+<p><input type="checkbox" class="task-list-item-checkbox" disabled=""> Calibrate scales if needed</p>
+</li>
+<li class="task-list-item">
+<p><input type="checkbox" class="task-list-item-checkbox" disabled=""> Check sensor readings</p>
+</li>
+<li class="task-list-item">
+<p><input type="checkbox" class="task-list-item-checkbox" disabled=""> Inspect electrical connections</p>
+</li>
+<li class="task-list-item">
+<p><input type="checkbox" class="task-list-item-checkbox" disabled=""> Clean water system</p>
+</li>
+</ul>
+<h3 id="monthly-maintenance">Monthly Maintenance</h3>
+<ul>
+<li class="task-list-item">
+<p><input type="checkbox" class="task-list-item-checkbox" disabled=""> Full system calibration</p>
+</li>
+<li class="task-list-item">
+<p><input type="checkbox" class="task-list-item-checkbox" disabled=""> Pressure test</p>
+</li>
+<li class="task-list-item">
+<p><input type="checkbox" class="task-list-item-checkbox" disabled=""> Software updates</p>
+</li>
+<li class="task-list-item">
+<p><input type="checkbox" class="task-list-item-checkbox" disabled=""> Backup configuration</p>
+</li>
+</ul>
+<h3 id="annual-maintenance">Annual Maintenance</h3>
+<ul>
+<li class="task-list-item">
+<p><input type="checkbox" class="task-list-item-checkbox" disabled=""> Professional electrical inspection</p>
+</li>
+<li class="task-list-item">
+<p><input type="checkbox" class="task-list-item-checkbox" disabled=""> Pressure vessel inspection</p>
+</li>
+<li class="task-list-item">
+<p><input type="checkbox" class="task-list-item-checkbox" disabled=""> Sensor replacement if needed</p>
+</li>
+<li class="task-list-item">
+<p><input type="checkbox" class="task-list-item-checkbox" disabled=""> Complete system overhaul</p>
+</li>
+</ul>
+<h2 id="🆘-troubleshooting">🆘 Troubleshooting</h2>
+<h3 id="common-installation-issues">Common Installation Issues</h3>
+<h4 id="disconnected-status">“DISCONNECTED” Status</h4>
+<p><strong>Cause</strong>: Serial communication failure</p>
+<p><strong>Solutions</strong>:</p>
+<ul>
+<li>
+<p>Check USB cable connection</p>
+</li>
+<li>
+<p>Verify correct COM port in config</p>
+</li>
+<li>
+<p>Ensure Arduino firmware uploaded</p>
+</li>
+<li>
+<p>Try different USB port</p>
+</li>
+</ul>
+<h4 id="temperature-reading-errors">Temperature Reading Errors</h4>
+<p><strong>Cause</strong>: PT100 sensor issues</p>
+<p><strong>Solutions</strong>:</p>
+<ul>
+<li>
+<p>Check 3-wire PT100 connections</p>
+</li>
+<li>
+<p>Verify MAX31865 wiring</p>
+</li>
+<li>
+<p>Clear sensor faults</p>
+</li>
+<li>
+<p>Check for electrical interference</p>
+</li>
+</ul>
+<h4 id="pressure-sensor-not-working">Pressure Sensor Not Working</h4>
+<p><strong>Cause</strong>: I2C communication failure</p>
+<p><strong>Solutions</strong>:</p>
+<ul>
+<li>
+<p>Check SDA/SCL connections</p>
+</li>
+<li>
+<p>Verify I2C address (0x48)</p>
+</li>
+<li>
+<p>Check power supply to ADS1115</p>
+</li>
+<li>
+<p>Test with I2C scanner</p>
+</li>
+</ul>
+<h4 id="scales-not-responding">Scales Not Responding</h4>
+<p><strong>Cause</strong>: HX711 communication issues</p>
+<p><strong>Solutions</strong>:</p>
+<ul>
+<li>
+<p>Check HX711 wiring</p>
+</li>
+<li>
+<p>Verify power supply</p>
+</li>
+<li>
+<p>Check load cell connections</p>
+</li>
+<li>
+<p>Recalibrate scales</p>
+</li>
+</ul>
+<h3 id="getting-help">Getting Help</h3>
+<h4 id="log-files">Log Files</h4>
+<p>Check log files in <code>logs/</code> directory for error messages.</p>
+<h4 id="serial-monitor">Serial Monitor</h4>
+<p>Use Arduino IDE Serial Monitor to debug hardware communication.</p>
+<h4 id="community-support">Community Support</h4>
+<ul>
+<li>
+<p>GitHub Issues: Report bugs and feature requests</p>
+</li>
+<li>
+<p>Forums: Community discussion and support</p>
+</li>
+<li>
+<p>Documentation: Refer to technical manual</p>
+</li>
+</ul>
+<hr>
+<p><strong>⚠️ IMPORTANT SAFETY NOTICE</strong></p>
+<p>This system controls high-temperature heating elements and high-pressure water systems. Installation should only be performed by qualified personnel familiar with electrical and plumbing systems. Always follow local electrical and plumbing codes. Test all safety systems before operation.</p>
+<p><strong>🔌 ELECTRICAL WARNING</strong></p>
+<p>This system involves potentially lethal voltages. Ensure all power is disconnected before working on electrical connections. Use proper lockout/tagout procedures. Install appropriate circuit protection.</p>
+<p><strong>💧 PRESSURE WARNING</strong></p>
+<p>This system operates under pressure. Ensure all pressure fittings are properly rated and installed. Install pressure relief valves. Never exceed maximum rated pressures.</p>
+</div>
+</body>
+
+</html>

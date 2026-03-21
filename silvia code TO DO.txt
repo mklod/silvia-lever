@@ -1,0 +1,100 @@
+
+____________________________________________________________		
+SILVIA LEVER - outstanding questions
+____________________________________________________________		
+
+
+prime at system ON 
+ 
+		how much volume to prime? manual stop button? 
+ 		 
+ 
+heat boiler + thermoblock at the same time? 
+w/ 15A standard outlet
+
+		silvia 0.3L boiler 115V 800W = 8.3A max on cold heat 
+		Ascaso thermoblock 120v 1000w == 8.33A
+		
+		....just stagger the heatup times
+		they'll never be 100% each
+
+
+____________________________________________________________		
+to do
+____________________________________________________________		
+
+test scale repeatability, drift, and auto-tare process during typical user flow
+
+auto prime thermoblock before heating to brew set point
+
+auto prime boiler before heating to steam set point
+
+separate brew / steam pumps, PT1000s, and purge/flush
+
+PID for thermoblock
+simple thermostat for steam boiler
+
+
+UI edit - temp buttons design
+	
+brew graph (both): x axis auto scaling
+brew screen top line: XTRA LARGE text: current MASS, TIMER,
+
+SAVE / LOAD profiles
+	
+			preset profiles: 
+	
+					blooming allonge
+						ramp to 4-5 bar, slow ramp down to 1-2 bar.
+						ramp up to 6 bar
+						extract ~2g/s
+						pressure does not ever exceed 6 bar
+						
+					bloom espresso
+						ramp to 5-9 bar, smoothly ramp down to 2 bar
+						then ramp back to 9 bar and hold
+																								
+		
+		
+		
+		
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
