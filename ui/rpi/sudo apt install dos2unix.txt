@@ -1,4 +1,0 @@
-sudo apt install dos2unix
-dos2unix "setup_and_run.sh"
-chmod +x "setup_and_run.sh"
-./setup_and_run.sh

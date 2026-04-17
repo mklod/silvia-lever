@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Silvia Lever
+GenericName=Espresso Controller
+Comment=Espresso machine controller UI
+Exec=@PROJECT_DIR@/ui/rpi/run_silvia.sh
+Icon=@PROJECT_DIR@/ui/source/svgs/logo.svg
+Terminal=false
+Categories=Utility;
+StartupNotify=false

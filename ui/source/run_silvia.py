@@ -1,12 +1,17 @@
 #!/usr/bin/env python3
+# Last modified: 2026-04-16--2346
 """
 Silvia Coffee Machine Startup Script
-Handles both mock and real hardware modes
+Handles both mock and real hardware modes; Windows dev + RPi deployment.
 """
 
 import sys
 import os
 import argparse
+
+import platform_shim
+platform_shim.apply_qt_env()
+
 from PyQt6.QtGui import QGuiApplication
 from PyQt6.QtQml import qmlRegisterType, QQmlApplicationEngine
 from PyQt6.QtCore import QUrl
@@ -29,8 +34,10 @@ def main():
         config.USE_MOCK_SERIAL = False
     if args.fullscreen:
         config.FULLSCREEN = True
-    
-    print(f"Starting Silvia Coffee Machine...")
+    elif platform_shim.default_fullscreen():
+        config.FULLSCREEN = True
+
+    print(f"Starting Silvia Coffee Machine on {platform_shim.platform_name()}...")
     print(f"Mock Serial: {config.USE_MOCK_SERIAL}")
     if not config.USE_MOCK_SERIAL:
         print(f"Serial Port: {config.SERIAL_PORT or 'Auto-detect'}")

@@ -7,8 +7,9 @@
 The existing Silvia Lever codebase was built for a single-heater, single-PT100, dual-HX711
 machine. The new hardware revision changes all of those components and adds a new water-routing
 architecture. This plan covers the full migration from old hardware to new, plus the UI and
-profile features listed in the TO DO file. Development targets the **Windows** source first
-(`ui/windows/source/`), then the RPi copy is synced afterward.
+profile features listed in the TO DO file. UI sources are now a **single shared tree**
+(`ui/source/`) that runs on both Windows (dev) and Raspberry Pi (deployed), differentiated only
+by a small `platform_shim.py`.
 
 ### New hardware summary
 | Component | Old | New |
@@ -77,11 +78,11 @@ Stage 4 – UI / QML                     ██████████  100 %  
 Stage 5 – Hardware verification        ██████████  100 %  DONE (alpha — extended testing)
 Stage 6A – Scale cold testing          ██████████  100 %  DONE (±0.1 g stability achieved)
 Stage 6B – Scale thermal drift         ░░░░░░░░░░    0 %  (requires live heating)
-Stage 7 – RPi sync                     ░░░░░░░░░░    0 %
+Stage 7 – RPi sync                     ██████████  100 %  DONE (shared tree + platform_shim)
 Stage 8 – Profile system               ░░░░░░░░░░    0 %  (deferred)
 Stage 9 – Dual-heater simultaneous op  ░░░░░░░░░░    0 %  (deferred, after Stage 5–6)
 ──────────────────────────────────────────────────
-TOTAL                                  ███████░░░  ~73 %  (10 stages, 6 done — alpha)
+TOTAL                                  ████████░░  ~80 %  (10 stages, 7 done — cross-platform)
 ```
 
 ### What is "done" means here
@@ -324,14 +325,27 @@ Run only after cold testing passes and `COLD_TEST_MODE` is disabled.
 
 ---
 
-## Stage 7 — RPi Sync
+## Stage 7 — RPi Sync ✓ DONE
 
-**Goal:** Mirror all Windows changes to the RPi version.
+**Approach adopted:** single shared source tree at `ui/source/` + small `platform_shim.py` for
+Windows-vs-RPi differences. No separate RPi tree to keep in sync.
 
-- [ ] S7.1 Copy updated Python files from `ui/windows/source/` → `ui/rpi/pyqt6/`
-        (qml_backend.py, temperature_controller.py, settings_manager.py, mock_serial_manager.py)
-- [ ] S7.2 Apply QML changes to `ui/rpi/pyqt6/main.qml`
-- [ ] S7.3 Verify RPi-specific `run_silvia.py` entry point and any path differences still work
+- [x] S7.1 Rename `ui/windows/source/` → `ui/source/`; delete stale `ui/rpi/pyqt6/`
+- [x] S7.2 Add `ui/source/platform_shim.py` — RPi detection, 2× scale factor, fullscreen default
+- [x] S7.3 Wire shim into `main.py` + `run_silvia.py` (sets `QT_SCALE_FACTOR` before Qt init)
+- [x] S7.4 `ui/rpi/setup_rpi.sh` (apt deps + dialout) and `ui/rpi/run_silvia.sh` (launcher)
+- [x] S7.5 Update `tools/flash_and_run.ps1` paths
+- [x] S7.6 Live-deployed to RPi 4B (192.168.1.33, gram) — fullscreen 1080p @ 2× scale verified
+- [x] S7.7 Desktop shortcut: `ui/rpi/silvia.desktop.in` → rendered to `~/Desktop/silvia.desktop` by setup; pcmanfm `single_click=1` + `quick_exec=1` for true one-tap launch
+- [x] S7.8 Teensy udev rule (`ui/rpi/99-teensy.rules`) — ignores ModemManager, forces dialout:0660
+- [x] S7.9 `SafetyManager` arm-on-first-telemetry — navigation works without Teensy; no spurious emergency-stop dialogs
+- [x] S7.10 `qml_backend.py` lazy SerialManager import — `--mock` flag now functional
+- [x] S7.11 Top-right invisible exit tap zone (`main.qml`) — `Qt.quit()` mirror of E-stop so user can leave fullscreen
+- [ ] S7.12 Autostart at boot (labwc-pi autostart entry or systemd --user unit) — deferred
+
+**Cross-platform serial**: `serialcom/real_serial_manager.py` already used Teensy VID (0x16C0)
+via `pyserial.tools.list_ports` — auto-detects `/dev/ttyACM*` on Linux and `COM*` on Windows
+with no platform code. No change needed.
 
 ---
 
@@ -525,10 +539,13 @@ forget that the boiler is primed and hot.
 - [ ] S6B.2 Full brew extraction — weight rises continuously with no jumps or resets
 - [ ] S6B.3 Update `SCALE_CALIB` in `config.h` and `scale_cal` in `settings_manager.py`
 
-### RPi Sync (Stage 7)
-- [ ] S7.1 Copy Python files to RPi directory
-- [ ] S7.2 Apply QML changes to RPi main.qml
-- [ ] S7.3 Verify RPi entry points
+### RPi Sync (Stage 7) ✓ Complete
+- [x] S7.1 Rename to shared `ui/source/` tree; delete stale `ui/rpi/pyqt6/`
+- [x] S7.2 Add `platform_shim.py` (RPi detection, 2× scale, fullscreen default)
+- [x] S7.3 Wire shim into `main.py` + `run_silvia.py`
+- [x] S7.4 Add `setup_rpi.sh` + `run_silvia.sh` launchers
+- [x] S7.5 Update `tools/flash_and_run.ps1` paths
+- [ ] S7.6 End-to-end verify on actual RPi hardware (deferred)
 
 ### Profile System (Stage 8 — deferred)
 - [ ] S8.1 Create `profile_manager.py` with load/save/delete + factory presets
@@ -569,10 +586,13 @@ forget that the boiler is primed and hot.
 | `firmware/silvia_lever_main/config.h` | Firmware constants, pins, `COLD_TEST_MODE`, `PUMP_ENA_PIN`, `PUMP_PWM_FULL` |
 | `firmware/PT1000_DEBUG.md` | PT1000 debug investigation log and root cause analysis |
 | `firmware/test_sketches/` | Individual component test sketches |
-| `ui/windows/source/qml_backend.py` | Python↔QML bridge (`CoffeeController`) |
-| `ui/windows/source/temperature_controller.py` | Python-side dual temp tracking |
-| `ui/windows/source/settings_manager.py` | Persist settings to `settings.json` |
-| `ui/windows/source/config.py` | Python constants (ports, limits) |
-| `ui/windows/source/main.qml` | Full UI (home, brew, steam, settings screens) |
-| `ui/windows/source/serialcom/mock_serial_manager.py` | Dev mock (no hardware needed) |
-| `ui/windows/source/controls/CircularSlider.qml` | Reusable gauge component |
+| `ui/source/qml_backend.py` | Python↔QML bridge (`CoffeeController`) |
+| `ui/source/platform_shim.py` | Windows/RPi detection + Qt scaling + fullscreen defaults |
+| `ui/source/temperature_controller.py` | Python-side dual temp tracking |
+| `ui/source/settings_manager.py` | Persist settings to `settings.json` |
+| `ui/source/config.py` | Python constants (ports, limits) |
+| `ui/source/main.qml` | Full UI (home, brew, steam, settings screens) |
+| `ui/source/serialcom/mock_serial_manager.py` | Dev mock (no hardware needed) |
+| `ui/source/controls/CircularSlider.qml` | Reusable gauge component |
+| `ui/rpi/setup_rpi.sh` | One-time RPi deps + dialout group setup |
+| `ui/rpi/run_silvia.sh` | RPi launcher (fullscreen + 2× scale via shim) |

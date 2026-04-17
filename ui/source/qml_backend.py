@@ -6,18 +6,24 @@ from temperature_controller import TemperatureController
 from settings_manager import SettingsManager
 import atexit
 
-# Import appropriate serial manager based on configuration
-if config.USE_MOCK_SERIAL:
-    from serialcom.mock_serial_manager import SerialManager
-else:
-    from serialcom.real_serial_manager import SerialManager
+
+def _get_serial_manager_class():
+    """Pick real vs mock at call time so --mock set after imports works."""
+    if config.USE_MOCK_SERIAL:
+        from serialcom.mock_serial_manager import SerialManager
+    else:
+        from serialcom.real_serial_manager import SerialManager
+    return SerialManager
 
 class CoffeeController(QObject):
     # Signals to QML
-    temperatureChanged = pyqtSignal(float)
+    brewTempChanged = pyqtSignal(float)    # Thermoblock actual temperature
+    steamTempChanged = pyqtSignal(float)   # Steam boiler actual temperature
     pressureChanged = pyqtSignal(float)
     weightChanged = pyqtSignal(float)
     pumpPowerChanged = pyqtSignal(float)
+    valvePumpChanged = pyqtSignal(bool)         # V1: false=thermoblock, true=boiler
+    valveThermoblockChanged = pyqtSignal(bool)  # V2: false=drain, true=portafilter
     stateChanged = pyqtSignal(str)
     brewTimeChanged = pyqtSignal(str)
     errorOccurred = pyqtSignal(str)
@@ -37,6 +43,7 @@ class CoffeeController(QObject):
         self.temp_controller = TemperatureController()
         
         # Serial communication
+        SerialManager = _get_serial_manager_class()
         if config.USE_MOCK_SERIAL:
             self.serial = SerialManager()
         else:
@@ -67,13 +74,17 @@ class CoffeeController(QObject):
         saved_settings = self.settings_manager.load_settings()
         self._brew_target_temp = saved_settings["brew_temp"]
         self._steam_target_temp = saved_settings["steam_temp"]
-        self._scale_cal_0 = saved_settings.get("scale_cal_0", 420.0983)
-        self._scale_cal_1 = saved_settings.get("scale_cal_1", 421.365)
+        self._scale_cal = saved_settings.get("scale_cal", 420.0)
+        # Guard: cal must be positive and in a plausible range.
+        # Negative → raw/weight polarity inverted (library bug or bad cal).
+        # <1 or >100000 → not a real cal factor for this load cell.
+        if not self._scale_cal or self._scale_cal <= 0 or self._scale_cal > 100000:
+            self._scale_cal = 420.0
         
         # Connection watchdog
         self._connection_timer = QTimer()
         self._connection_timer.timeout.connect(self._check_connection)
-        self._connection_timer.start(5000)  # Disabled - Check every 5 seconds
+        self._connection_timer.start(5000)  # Check every 5 seconds
         
         # Register shutdown handler
         atexit.register(self._shutdown)
@@ -87,9 +98,8 @@ class CoffeeController(QObject):
             QTimer.singleShot(100, lambda: self.connectionStatusChanged.emit(True))
             QTimer.singleShot(200, lambda: self.targetTemperaturesChanged.emit(self._brew_target_temp, self._steam_target_temp))
             
-            # Start heating to brew temp immediately on startup
-            QTimer.singleShot(300, self._auto_start_heating)
-            
+            # Priming is triggered from QML when user enters brew screen
+
             # Restore scale calibration
             QTimer.singleShot(400, self._restore_scale_calibration)
         except Exception as e:
@@ -259,100 +269,86 @@ class CoffeeController(QObject):
         self.logger.log_response(line)
         
         if line.startswith("DATA:"):
-            # Parse Arduino DATA format: DATA:state,temp,pressure,weight,pump%,valve,heater,brewTime,scalesTared
+            # New packet format (12 fields):
+            # DATA:state,brewTemp,steamTemp,pressure,weight,pump%,valveTB,valveBoiler,heaterBrew,heaterSteam,brewTimer,scalesTared
             try:
-                data_part = line[5:]  # Remove "DATA:"
-                parts = data_part.split(',')
-                if len(parts) >= 7:
-                    state_num = int(parts[0])
-                    temp = float(parts[1])
-                    pressure = float(parts[2])
-                    weight = float(parts[3])
-                    pump_percent = int(parts[4])
-                    valve = int(parts[5])
-                    heater = int(parts[6])
-                    brew_time = int(parts[7]) if len(parts) > 7 else 0
-                    scales_tared = bool(int(parts[8])) if len(parts) > 8 else False
+                parts = line[5:].split(',')
+                if len(parts) < 10:
+                    return
 
-                    # Convert state number to string
-                    state_names = ["IDLE", "HEATING_BREW", "HEATING_STEAM", "BREWING", "STEAMING", "FLUSHING"]
-                    state = state_names[state_num] if state_num < len(state_names) else "UNKNOWN"
+                state_num    = int(parts[0])
+                brew_temp    = float(parts[1])
+                steam_temp   = float(parts[2])
+                pressure     = float(parts[3])
+                weight       = float(parts[4])
+                pump_percent = int(parts[5])
+                valve_tb     = bool(int(parts[6])) if len(parts) > 6 else False
+                valve_pump   = bool(int(parts[7])) if len(parts) > 7 else False
+                brew_time    = int(parts[10]) if len(parts) > 10 else 0
+                scales_tared = bool(int(parts[11])) if len(parts) > 11 else False
 
-                    # Store current state for validation
-                    self._current_state = state
+                state_names = [
+                    "IDLE",
+                    "PRIMING_BREW", "HEATING_BREW",
+                    "PRIMING_STEAM", "HEATING_STEAM",
+                    "BREWING", "STEAMING", "FLUSHING"
+                ]
+                state = state_names[state_num] if state_num < len(state_names) else "UNKNOWN"
+                self._current_state = state
 
-                    # Safety check temperature
-                    if not self.safety.check_temperature(temp):
-                        return
+                # Safety checks on both temperatures
+                if not self.safety.check_temperature(brew_temp):
+                    return
+                if not self.safety.check_temperature(steam_temp):
+                    return
 
-                    # Update temperature controller
-                    self.temp_controller.update_temperature(temp)
-                    
-                    # Log sensor data
-                    self.logger.log_sensor_data(temp, pressure, weight, state, pump_percent)
+                # Update temperature controller with both readings
+                self.temp_controller.update_brew_temperature(brew_temp)
+                self.temp_controller.update_steam_temperature(steam_temp)
 
-                    # Calculate pump power percentage (pot value / 1023 * 100)
-                    # Arduino sends PWM value (pot/4), so multiply by 4 to get original pot value
-                    pump_power_percent = pump_percent#(pump_percent * 4 / 1023.0) * 100.0
+                # Log sensor data (use brew temp as primary for logging)
+                self.logger.log_sensor_data(brew_temp, pressure, weight, state, pump_percent)
 
-                    # Check scales settling
-                    self._check_scales_settling(weight)
-                    
-                    # Emit to QML
-                    self.stateChanged.emit(state)
-                    self.temperatureChanged.emit(temp)
-                    self.pressureChanged.emit(pressure)
-                    self.weightChanged.emit(weight)
-                    self.pumpPowerChanged.emit(pump_power_percent)
-                    self.scalesTaredChanged.emit(scales_tared)
-                    
+                # Check scales settling
+                self._check_scales_settling(weight)
+
+                # Emit to QML
+                self.stateChanged.emit(state)
+                self.brewTempChanged.emit(brew_temp)
+                self.steamTempChanged.emit(steam_temp)
+                self.pressureChanged.emit(pressure)
+                self.weightChanged.emit(weight)
+                self.pumpPowerChanged.emit(float(pump_percent))
+                self.valvePumpChanged.emit(valve_pump)
+                self.valveThermoblockChanged.emit(valve_tb)
+                self.scalesTaredChanged.emit(scales_tared)
+
             except Exception as e:
                 self.logger.log_error(f"Failed to parse DATA: {line} - {e}")
         elif line.startswith("NEW_CAL:"):
-            # Handle calibration response: NEW_CAL:cal0,cal1
+            # Handle NAU7802 calibration response: NEW_CAL:<factor>
+            # Valid range: positive, ≥1, ≤100000.
             try:
-                cal_data = line[8:]  # Remove "NEW_CAL:"
-                cal0, cal1 = cal_data.split(',')
-                self._scale_cal_0 = float(cal0)
-                self._scale_cal_1 = float(cal1)
-                self.settings_manager.save_settings(self._brew_target_temp, self._steam_target_temp, self._scale_cal_0, self._scale_cal_1)
-                self.logger.log_command(f"Scale calibration updated: {cal0}, {cal1}")
+                new_cal = float(line[8:])
+                if new_cal <= 0 or new_cal < 1.0 or new_cal > 100000:
+                    reason = ("negative" if new_cal < 0
+                              else "too small" if abs(new_cal) < 1.0
+                              else "too large")
+                    self.logger.log_error(f"Cal result invalid ({new_cal}, {reason}) — rejected, restoring {self._scale_cal}")
+                    self.serial.send_command(f"SET_SCALE_CAL {self._scale_cal}")
+                    self.errorOccurred.emit(f"Cal failed: factor {new_cal:.3f} {reason}. Previous cal {self._scale_cal:.1f} restored.")
+                else:
+                    self._scale_cal = new_cal
+                    self.settings_manager.save_settings(self._brew_target_temp, self._steam_target_temp, self._scale_cal)
+                    self.logger.log_command(f"Scale calibration updated: {self._scale_cal}")
             except Exception as e:
                 self.logger.log_error(f"Failed to parse calibration: {line} - {e}")
-        elif line.startswith("STATUS"):
-            # Handle legacy STATUS format for compatibility
-            parts = line.split()
-            if len(parts) >= 6:
-                try:
-                    state = parts[1]
-                    temp = float(parts[2])
-                    pressure = float(parts[3])
-                    weight = float(parts[4])
-                    pump_pwm = int(parts[5]) if len(parts) > 5 else 0
-                    
-                    # Safety check temperature
-                    if not self.safety.check_temperature(temp):
-                        return
-                        
-                    # Update temperature controller
-                    self.temp_controller.update_temperature(temp)
-                    
-                    # Log sensor data
-                    self.logger.log_sensor_data(temp, pressure, weight, state, pump_pwm)
-                    
-                    # Calculate pump power percentage (pot value / 1023 * 100)
-                    # Arduino sends PWM value (pot/4), so multiply by 4 to get original pot value
-                    pump_power_percent = (pump_pwm)# * 4 / 1023.0) * 100.0
-                    
-                    # Emit to QML
-                    self.stateChanged.emit(state)
-                    self.temperatureChanged.emit(temp)
-                    self.pressureChanged.emit(pressure)
-                    self.weightChanged.emit(weight)
-                    self.pumpPowerChanged.emit(pump_power_percent)
-                    
-                except Exception as e:
-                    self.logger.log_error(f"Failed to parse status: {line} - {e}")
+        elif line.startswith("STATUS:"):
+            # STATUS: key=value,... response — parse for logging only
+            try:
+                self.logger.log_response(line)
+            except Exception as e:
+                self.logger.log_error(f"Failed to parse STATUS: {line} - {e}")
         elif line.startswith("ERROR"):
             self.logger.log_error(line)
             self.errorOccurred.emit(line)
@@ -410,6 +406,7 @@ class CoffeeController(QObject):
             self.logger.log_command("Attempting reconnection...")
             if self.serial:
                 self.serial.stop()
+            SerialManager = _get_serial_manager_class()
             if config.USE_MOCK_SERIAL:
                 self.serial = SerialManager()
             else:
@@ -468,13 +465,15 @@ class CoffeeController(QObject):
             self._scales_settled = settled
             self.scalesSettledChanged.emit(settled)
         
-    def _auto_start_heating(self):
-        """Automatically start heating to brew temp on startup"""
-        if self.connected and self._current_state == "IDLE":
-            self.temp_controller.set_mode("BREW")
-            self.serial.send_command("START_BREW")
-            self.logger.log_command("Auto-started brew heating on startup")
-    
+    @pyqtSlot()
+    def primeDone(self):
+        """User confirmed overflow — tell firmware to stop pump and start heating."""
+        if self.connected:
+            self.serial.send_command("PRIME_DONE")
+            self.logger.log_command("PRIME_DONE")
+        else:
+            self.errorOccurred.emit("Cannot confirm prime - not connected")
+
     @pyqtSlot()
     def tareScales(self):
         """Tare the scales"""
@@ -494,10 +493,10 @@ class CoffeeController(QObject):
             self.errorOccurred.emit("Cannot calibrate scales - not connected")
             
     def _restore_scale_calibration(self):
-        """Restore saved scale calibration on startup"""
+        """Restore saved NAU7802 calibration on startup"""
         if self.connected:
-            self.serial.send_command(f"SET_SCALE_CAL {self._scale_cal_0} {self._scale_cal_1}")
-            self.logger.log_command(f"Restored scale calibration: {self._scale_cal_0}, {self._scale_cal_1}")
+            self.serial.send_command(f"SET_SCALE_CAL {self._scale_cal}")
+            self.logger.log_command(f"Restored scale calibration: {self._scale_cal}")
     
     @pyqtSlot()
     def emergencyStop(self):

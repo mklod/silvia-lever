@@ -2,10 +2,92 @@
 
 ## TODO
 > [!tip] Queued for next build
+> - Plug Teensy into RPi (via udev rule, should auto-detect as `/dev/ttyACM0` with no ModemManager interference) and verify end-to-end telemetry on the touchscreen
 > - Extended brew + steam + flush sessions on real hardware
 > - PID tuning once thermoblock has reached setpoint a few times
 > - Profile system (Stage 8) after a few weeks of real-world use
-> - RPi sync (Stage 7) once Windows alpha is confirmed stable
+> - Autostart silvia on RPi boot (systemd user unit or labwc-pi autostart) so no tap needed at power-on
+
+## Build 2026-04-17--0100 — Invisible exit tap zone
+
+- **Top-right 144×144 invisible tap area** (`exitAppBtn` in main.qml) — mirror of the bottom-right E-stop zone; tap calls `Qt.quit()` to leave fullscreen on the RPi touchscreen.
+
+## Build 2026-04-17--0056 — Teensy hotplug hardening + pcmanfm `quick_exec=1`
+
+- **No more "Execute / Execute in Terminal" prompt** on tap: added `quick_exec=1` to `~/.config/libfm/libfm.conf`. Both `single_click=1` and `quick_exec=1` are now upserted into `[config]` by `setup_rpi.sh` (idempotent).
+- **Teensy udev rule `ui/rpi/99-teensy.rules`** → installed to `/etc/udev/rules.d/`: `SUBSYSTEM=="tty", ATTRS{idVendor}=="16c0", ENV{ID_MM_DEVICE_IGNORE}="1", GROUP="dialout", MODE="0660"`. Stops ModemManager from probing the Teensy as a cellular modem on hotplug (it would AT-command the port for several seconds and block the first UI connection). Also ensures dialout access + 0660 perms.
+- `setup_rpi.sh` installs the rule and runs `udevadm control --reload-rules` + `udevadm trigger --subsystem-match=tty`.
+
+## Build 2026-04-17--0050 — Tap-to-launch UX + disconnected navigation
+
+- **`SafetyManager` arm-on-first-telemetry**: previously `_safety_check()` fired `emergencyStop("Communication timeout")` every tick from startup when no data had arrived — now a new `armed` flag stays False until the first telemetry packet bumps `last_data_time`, then stays armed until one timeout fires (so exactly one alert per disconnect instead of 60/min). Lets the UI launch cleanly without a Teensy attached for navigation / dev
+- **`qml_backend.py` lazy SerialManager import**: introduced `_get_serial_manager_class()` helper called inside `__init__` and `_attempt_reconnection()`. Fixes pre-existing bug where `--mock` was parsed after `from qml_backend import CoffeeController` had already bound the real SerialManager
+- **pcmanfm single-click launch**: `~/.config/libfm/libfm.conf` `single_click=1` — one tap on the desktop icon now launches instead of selecting-then-renaming on second tap. Touchscreen-friendly
+- **Verified on RPi**: UI launched without Teensy, 0 emergency-stop dialogs in 15s, home screen rendered with RANCILIO logo (SVG now decoding after `qt6-svg-plugins`)
+
+## Build 2026-04-17--0033 — Desktop shortcut
+
+- **Tap-to-launch on RPi desktop**: installed `/home/gram/Desktop/silvia.desktop` that pcmanfm-pi renders as "Silvia Lever" with the logo.svg icon
+- **`ui/rpi/silvia.desktop.in`** — template with `@PROJECT_DIR@` placeholder
+- **`setup_rpi.sh`** now: (a) renders the template into `$HOME/Desktop/silvia.desktop`, `chmod +x`, and `gio set metadata::trusted true`; (b) installs `qt6-svg-plugins` + `librsvg2-common` and runs `gdk-pixbuf-query-loaders --update-cache` so both Qt's QML `Image` and pcmanfm's desktop icon can render SVGs
+- **Verified on RPi**: desktop now shows the "Silvia Lever" label with rendered logo; `dex ~/Desktop/silvia.desktop` launches `run_silvia.py` (confirms tap will work)
+
+## Build 2026-04-17--0020 — RPi live deployment
+
+### Deployed + verified on RPi 4B (192.168.1.33, `gram`)
+- **apt install bookworm defaults weren't sufficient** — `setup_rpi.sh` extended to include the Qt/QML runtime modules that don't come with `python3-pyqt6` alone:
+  - `qt6-wayland` (Qt Wayland platform plugin — Pi OS Bookworm uses labwc/Wayland by default)
+  - `libxcb-cursor0` (XWayland fallback dep)
+  - `libqt6svg6` (SVG image decode for `logo.svg`)
+  - `qml6-module-qtqml`, `-qtquick`, `-qtquick-window`, `-qtquick-controls`, `-qtquick-layouts`, `-qtquick-shapes`, `-qtquick-templates`, `-qtquick-effects`, `-qtquick-nativestyle`
+- **`run_silvia.sh`**: exports `XDG_RUNTIME_DIR` / `WAYLAND_DISPLAY` / `QT_QPA_PLATFORM=wayland` with fallbacks so launches from SSH (without the desktop session env) still reach the compositor
+- **Verified fullscreen 1920×1080 on actual touchscreen**: shim reported `raspberry-pi` / scale 2.0 / fullscreen True; QML loaded cleanly after the extra modules; debug row + buttons + gauge all rendered at correct 2× scale
+- **Known limitation**: `--mock` flag on `run_silvia.py` is ineffective due to pre-existing import-order bug in `qml_backend.py` (`SerialManager` chosen at module-import time, before args parse). Not blocking — real deployment has Teensy connected
+
+## Build 2026-04-16--2346 — Cross-platform (RPi port via shim)
+
+### Structure
+- **Single shared source tree**: renamed `ui/windows/source/` → `ui/source/` — both Windows dev and RPi deployment now run the same Python/QML code
+- **Removed stale RPi tree**: `ui/rpi/pyqt6/` (pre-current-architecture — had separate `safety_manager.py`, `temperature_controller.py`, `controls/`, and an outdated `main.qml`) + the old `.txt`/`.rar` build notes
+- **`ui/rpi/` now contains only launcher scripts**: `setup_rpi.sh`, `run_silvia.sh`
+
+### Platform shim (`ui/source/platform_shim.py`)
+- Detects RPi via `/proc/device-tree/model` (contains "Raspberry Pi")
+- Exposes `ui_scale_factor()` → 2.0 on RPi, 1.0 on Windows
+- Exposes `default_fullscreen()` → True on RPi
+- `apply_qt_env()` sets `QT_SCALE_FACTOR` + `QT_ENABLE_HIGHDPI_SCALING` **before** `QGuiApplication` is constructed — Qt renders the UI at 1920×1080 with crisp fonts instead of scaling a 960×540 bitmap
+- Wired into both `main.py` (flash-and-run entry) and `run_silvia.py` (CLI entry with `--mock` / `--port` / `--fullscreen` flags)
+
+### Serial cross-platform (already was, documented)
+- `serialcom/real_serial_manager.py` uses Teensy VID (0x16C0) via `pyserial` — same auto-detection works for `COM*` on Windows and `/dev/ttyACM*` on Linux. No code change needed
+
+### RPi deployment scripts
+- **`ui/rpi/setup_rpi.sh`** — one-time: `apt install python3-pyqt6 python3-pyqt6.qtquick python3-pyqt6.qtqml python3-serial`, adds user to `dialout` group
+- **`ui/rpi/run_silvia.sh`** — launcher that `cd`s to `ui/source/` and execs `python3 run_silvia.py`; shim auto-applies fullscreen + 2× scale
+
+### Tooling
+- **`tools/flash_and_run.ps1`**: updated `$UiScript` / `$UiCwd` to `ui/source/`
+
+### Docs
+- **workplan.md**: Stage 7 marked DONE; key file reference table updated from `ui/windows/source/` → `ui/source/`
+- **`.gitignore`**: `ui/windows/source/logs/` → `ui/source/logs/`; removed dead `ui/rpi/pyqt6/logs/` entry
+
+### Testing checklist
+> [!warning] Testing Checklist
+> - [ ] Windows: `python main.py` in `ui/source/` → UI launches at 960×540 exactly as before
+>   - Notes:
+> - [ ] Windows: `tools/flash_and_run.ps1 -NoUpload -NoCompile` launches UI
+>   - Notes:
+> - [ ] RPi: `setup_rpi.sh` installs deps without error on fresh Bookworm
+>   - Notes:
+> - [ ] RPi: `run_silvia.sh` launches fullscreen 1920×1080 with 2× font scaling
+>   - Notes:
+> - [ ] RPi: Teensy auto-detected on `/dev/ttyACM0` via VID 0x16C0
+>   - Notes:
+> - [ ] RPi touchscreen: all tap targets hittable (brew tap area, E-stop corner, settings ±°C)
+>   - Notes:
+
+---
 
 ## Build 2026-04-16--2255 — Alpha release
 

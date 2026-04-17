@@ -193,6 +193,18 @@ ApplicationWindow {
         }
     }
 
+    // Exit app — invisible top-right tap area, 144×144.
+    // Tap → quit (used to leave fullscreen on RPi touchscreen).
+    MouseArea {
+        id: exitAppBtn
+        anchors.top: parent.top
+        anchors.right: parent.right
+        width: 144
+        height: 144
+        z: 1001
+        onClicked: Qt.quit()
+    }
+
     // Toast — transient banner used for E-stop and other quick notifications.
     // Top-center, fades out after 2.5s.
     Rectangle {

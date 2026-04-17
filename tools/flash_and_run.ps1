@@ -16,8 +16,8 @@ param(
 $ErrorActionPreference = "Continue"
 $PSNativeCommandUseErrorActionPreference = $false
 $ArduinoCli = "C:\Users\mklod\AppData\Local\Programs\Arduino IDE\resources\app\lib\backend\resources\arduino-cli.exe"
-$UiScript   = "L:\PROJECTS\silvia lever\ui\windows\source\main.py"
-$UiCwd      = "L:\PROJECTS\silvia lever\ui\windows\source"
+$UiScript   = "L:\PROJECTS\silvia lever\ui\source\main.py"
+$UiCwd      = "L:\PROJECTS\silvia lever\ui\source"
 
 function Write-Step($msg) {
     Write-Host ""

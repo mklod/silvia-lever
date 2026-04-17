@@ -1,6 +1,7 @@
 # Build artifacts
 ui/windows/build/
 ui/windows/dist/
+ui/source/logs/
 *.rar
 
 # Python
@@ -9,11 +10,9 @@ __pycache__/
 *.pyo
 
 # Logs
-ui/rpi/pyqt6/logs/
-ui/windows/source/logs/
 logs/
 
-# Stray root settings.json (real one lives in ui/windows/source/)
+# Stray root settings.json (real one lives in ui/source/)
 /settings.json
 
 # Claude Code local settings
@@ -22,3 +21,6 @@ logs/
 # OS files
 Thumbs.db
 .DS_Store
+
+# RPi screenshots (ephemeral debugging artifacts)
+tools/rpi_*.png
