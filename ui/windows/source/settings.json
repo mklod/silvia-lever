@@ -1,1 +1,7 @@
-{"brew_temp": 93.0, "steam_temp": 130.0, "scale_cal_0": 420.0983, "scale_cal_1": 421.365}
+{
+  "brew_temp": 99.0,
+  "steam_temp": 139.0,
+  "scale_cal_0": 420.0983,
+  "scale_cal_1": 421.365,
+  "scale_cal": 2050.6499
+}

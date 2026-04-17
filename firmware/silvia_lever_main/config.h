@@ -10,18 +10,23 @@
 // ─── Pump ────────────────────────────────────────────────────────────────────
 #define POT_PIN         A0   // Potentiometer for manual pump speed control
 #define PUMP_PWM_PIN     9   // PWM output to pump motor driver
+#define PUMP_ENA_PIN     3   // Optoisolator enable — HIGH to pass PWM to motor driver
 
 // ─── Heaters (two separate SSRs) ─────────────────────────────────────────────
 #define HEATER_BREW_PIN  15  // Thermoblock SSR (brew / PID controlled)
 #define HEATER_STEAM_PIN 16  // Steam boiler SSR (thermostat controlled)
 
 // ─── 3-Way Valves ────────────────────────────────────────────────────────────
-// VALVE1 (VALVE_PUMP): energised → pump output → thermoblock OPV path
-//                      de-energised → pump output → boiler OPV path
-// VALVE2 (VALVE_THERMOBLOCK): energised → thermoblock coil → group head
-//                             de-energised → thermoblock coil → drain
-#define VALVE_PUMP_PIN         21  // VALVE1 — routes pump to thermoblock vs boiler
-#define VALVE_THERMOBLOCK_PIN  20  // VALVE2 — routes thermoblock outlet to group head vs drain
+// VALVE1 (VALVE_PUMP): de-energised → pump → thermoblock (default, heaviest duty)
+//                      energised    → pump → boiler (intermittent steam use)
+// VALVE2 (VALVE_THERMOBLOCK): energised    → thermoblock → portafilter manifold
+//                             de-energised → thermoblock → drain (pressure relief)
+//
+// Both valves chosen so the most-used state is de-energised — saves coil power
+// and heat. V2 is energised only during brewing/flushing through portafilter.
+// V1 is energised only when steaming/filling boiler.
+#define VALVE_PUMP_PIN         21  // VALVE1 — routes pump to thermoblock (LOW) vs boiler (HIGH)
+#define VALVE_THERMOBLOCK_PIN  20  // VALVE2 — routes thermoblock outlet to drain (LOW) vs portafilter (HIGH)
 
 // ─── PT1000 Temperature Sensors (SPI via MAX31865) ───────────────────────────
 // MOSI / MISO / CLK are shared; each sensor has its own CS pin.
@@ -75,11 +80,22 @@
 // Used by the steam boiler thermostat (PID drives brew heater directly).
 #define HEATER_PWM_FULL  255
 
+// ─── Pump PWM ────────────────────────────────────────────────────────────────
+// Max pump speed for priming/flushing. Use 254 (not 255) to ensure Teensy 4.0
+// outputs actual PWM edges — analogWrite(pin, 255) produces constant HIGH
+// which some motor drivers don't respond to.
+#define PUMP_PWM_FULL  254
+
 // ─── Cold Test Mode ───────────────────────────────────────────────────────────
 // Uncomment to disable both SSRs completely for dry / water-flow-only testing.
 // All other logic (valves, pump, sensors, serial) runs normally.
 // IMPORTANT: comment this line out again before live heating use.
 #define COLD_TEST_MODE
+
+// ─── Scale-only debug ─────────────────────────────────────────────────────────
+// Temporarily disables PT1000, ADS1115, and pot reads in updateSensors() to
+// isolate NAU7802 scale noise. Comment out for normal operation.
+// #define SCALE_ONLY_DEBUG
 
 // ─── Timing Intervals (milliseconds) ─────────────────────────────────────────
 #define TEMP_READ_INTERVAL      500   // Both PT1000s read every 500 ms

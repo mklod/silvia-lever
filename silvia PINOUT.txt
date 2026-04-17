@@ -2,7 +2,8 @@
 teensy 4.0
 
 A0 // D14 read potentiometer (user input )
-9 // PWM output (0v-5v) to motor controller (pump speed)
+ 9 // PWM output (0v-5v) to motor controller (pump speed)
+ 3 // pump enable — optoisolator gates PWM to motor driver (HIGH = enabled)
 
 //PT1000 over SPI via MAX31865 (dual sensors, shared bus)
 10 CS  (thermoblock PT1000)
@@ -21,8 +22,8 @@ A0 // D14 read potentiometer (user input )
 16 //SSR2 for boiler / STEAM heating element
 
 
-21 // valve 1 switching (VALVE_PUMP)
-20 // valve 2 switching (VALVE_THERMOBLOCK)
+21 // valve 1 (VALVE_PUMP) — LOW: pump→thermoblock (default), HIGH: pump→boiler
+20 // valve 2 (VALVE_THERMOBLOCK) — LOW: thermoblock→drain (default), HIGH: thermoblock→portafilter
 
 
 	

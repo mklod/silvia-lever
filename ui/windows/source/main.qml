@@ -31,6 +31,8 @@ ApplicationWindow {
     property real currentPressure: 0.0
     property real currentWeight: 0.0
     property real currentPumpPower: 0.0
+    property bool valvePumpEnergised: false        // V1: false=thermoblock, true=boiler
+    property bool valveThermoblockEnergised: false // V2: false=drain, true=portafilter
     property string currentState: "IDLE"
     property string brewTime: "00:00"
     property bool steamActive: false
@@ -46,8 +48,17 @@ ApplicationWindow {
         onBrewTempChanged:   function(temp)  { window.brewTempActual  = temp  }
         onSteamTempChanged:  function(temp)  { window.steamTempActual = temp  }
         onPressureChanged:   function(press) { window.currentPressure = press }
-        onWeightChanged:     function(wt)    { window.currentWeight   = wt    }
+        onWeightChanged:     function(wt)    {
+            // Guard against Infinity/NaN from firmware when cal factor is bad
+            if (isFinite(wt)) {
+                window.currentWeight = wt
+            } else {
+                window.currentWeight = 0
+            }
+        }
         onPumpPowerChanged:  function(power) { window.currentPumpPower = power }
+        onValvePumpChanged:        function(on) { window.valvePumpEnergised = on }
+        onValveThermoblockChanged: function(on) { window.valveThermoblockEnergised = on }
         onStateChanged:      function(st)    { window.currentState    = st    }
         onBrewTimeChanged:   function(time)  { window.brewTime        = time  }
         
@@ -84,54 +95,140 @@ ApplicationWindow {
         anchors.fill: parent
         initialItem: homeScreen
     }
-    
-    // Connection Status Indicator
-    Rectangle {
-        id: connectionStatus
-        property bool connected: false
-        //property bool connected: true
-        
+
+    // Persistent debug row — bottom, all live sensor values + valve states.
+    // Visible on all screens (window-level), high z so it floats above content.
+    // Each field is fixed-width with right-justified numbers so values don't
+    // shift position when digit count or sign changes ("0.00" → "-0.10").
+    RowLayout {
+        id: debugRow
         anchors.bottom: parent.bottom
+        anchors.left: parent.left
         anchors.right: parent.right
-        anchors.margins: 10
-        width: 100
-        height: 30
-        radius: 15
-        color: connected ? "#27ae60" : "#e74c3c"
-        
+        anchors.bottomMargin: 12
+        anchors.leftMargin: 16
+        anchors.rightMargin: 16
+        z: 1000
+        spacing: 0
+
         Text {
-            anchors.centerIn: parent
-            text: connectionStatus.connected ? "CONNECTED" : "DISCONNECTED"
-            color: "white"
-            font.pixelSize: 10
-            font.bold: true
+            Layout.fillWidth: true
+            horizontalAlignment: Text.AlignHCenter
+            color: "#ffffff"
+            font.pixelSize: 14
+            font.family: "Consolas"
+            text: "SCALE: " + (isFinite(window.currentWeight)
+                                ? (window.currentWeight >= 0 ? " " : "") + window.currentWeight.toFixed(2) + " g"
+                                : "—")
+        }
+        Text {
+            Layout.fillWidth: true
+            horizontalAlignment: Text.AlignHCenter
+            color: "#ffffff"
+            font.pixelSize: 14
+            font.family: "Consolas"
+            text: "PRESS: " + (isFinite(window.currentPressure)
+                                ? (window.currentPressure >= 0 ? " " : "") + window.currentPressure.toFixed(2) + " bar"
+                                : "—")
+        }
+        Text {
+            Layout.fillWidth: true
+            horizontalAlignment: Text.AlignHCenter
+            color: "#ffffff"
+            font.pixelSize: 14
+            font.family: "Consolas"
+            text: {
+                var p = window.currentPumpPower.toFixed(0)
+                while (p.length < 3) p = " " + p
+                return "PUMP: " + p + "%"
+            }
+        }
+        Text {
+            Layout.fillWidth: true
+            horizontalAlignment: Text.AlignHCenter
+            color: "#ffffff"
+            font.pixelSize: 14
+            font.family: "Consolas"
+            text: "V1: " + (window.valvePumpEnergised ? "boiler     " : "thermoblock")
+        }
+        Text {
+            Layout.fillWidth: true
+            horizontalAlignment: Text.AlignHCenter
+            color: "#ffffff"
+            font.pixelSize: 14
+            font.family: "Consolas"
+            text: "V2: " + (window.valveThermoblockEnergised ? "portafilter" : "drain      ")
         }
     }
-    
-    // Emergency Stop Button
-    Rectangle {
+
+    // Connection Status — top-right of home screen, plain white text.
+    // Hidden on other screens (only meaningful at startup glance).
+    Text {
+        id: connectionStatus
+        property bool connected: false
+
+        anchors.top: parent.top
+        anchors.right: parent.right
+        anchors.margins: 12
+        text: connectionStatus.connected ? "CONNECTED" : "DISCONNECTED"
+        color: "#ffffff"
+        font.pixelSize: 14
+        font.family: "Consolas"
+        visible: stackView.depth <= 1
+        z: 1000
+    }
+
+    // Emergency Stop — invisible bottom-right tap area, 144×144.
+    // Tap → triggers emergency stop and shows toast.
+    MouseArea {
+        id: emergencyStopBtn
         anchors.bottom: parent.bottom
-        anchors.right: connectionStatus.left
-        anchors.margins: 10
-        width: 100
-        height: 30
-        radius: 20
-        color: "#c0392b"
-        border.color: "#ffffff"
-        border.width: 2
-        
-        Text {
-            anchors.centerIn: parent
-            text: "EMERGENCY STOP"//"/n"
-            color: "white"
-            font.pixelSize: 10
-            font.bold: true
-            horizontalAlignment: Text.AlignHCenter
+        anchors.right: parent.right
+        width: 144
+        height: 144
+        z: 1001
+        onClicked: {
+            controller.emergencyStop()
+            toast.show("EMERGENCY STOP")
         }
-        
-        MouseArea {
-            anchors.fill: parent
-            onClicked: controller.emergencyStop()
+    }
+
+    // Toast — transient banner used for E-stop and other quick notifications.
+    // Top-center, fades out after 2.5s.
+    Rectangle {
+        id: toast
+        property string message: ""
+
+        anchors.horizontalCenter: parent.horizontalCenter
+        anchors.top: parent.top
+        anchors.topMargin: 80
+        width: toastText.implicitWidth + 40
+        height: 52
+        color: "#e74c3c"
+        radius: 4
+        opacity: 0
+        z: 2000
+
+        Behavior on opacity { NumberAnimation { duration: 250 } }
+
+        Text {
+            id: toastText
+            anchors.centerIn: parent
+            text: toast.message
+            color: "#ffffff"
+            font { pixelSize: 18; bold: true }
+        }
+
+        Timer {
+            id: toastTimer
+            interval: 2500
+            onTriggered: toast.opacity = 0
+        }
+
+        function show(msg) {
+            message = msg
+            opacity = 1.0
+            toastTimer.restart()
         }
     }
     
@@ -272,7 +369,7 @@ ApplicationWindow {
                                 text: parent.text
                                 font.pixelSize: 28
                                 opacity: enabled ? 1.0 : 0.3
-                                color: parent.down || !enabled?  "#3498db" : "#ffffff"
+                                color: "#ffffff"
                                 horizontalAlignment: Text.AlignHCenter
                                 verticalAlignment: Text.AlignVCenter
                                 elide: Text.ElideRight
@@ -282,10 +379,10 @@ ApplicationWindow {
                                 implicitWidth: 190
                                 implicitHeight: 58
                                 opacity: enabled ? 1 : 0.3
-                                color: "transparent"
-                                border.color: parent.down || !enabled? "#3498db" : "#ffffff"
+                                color: parent.down ? Qt.rgba(1,1,1,0.15) : "transparent"
+                                border.color: "#ffffff"
                                 border.width: 1
-                                radius: 20
+                                radius: 12
                             }
 
                             enabled: connectionStatus.connected
@@ -296,154 +393,107 @@ ApplicationWindow {
                             }
                         }
                         
-                        RowLayout {
-                            spacing: 10
-                            Button {
-                                text: qsTr("STEAM")
+                        // ── STEAM toggle button ─────────────────────────────
+                        // Same toggle behaviour and styling as FLUSH:
+                        // tap to start, tap again to stop. Active = depressed.
+                        Rectangle {
+                            id: steamBtn
+                            Layout.preferredWidth: 190
+                            Layout.preferredHeight: 58
+                            radius: 12
 
-                                contentItem: Text {
-                                    text: parent.text
-                                    font.pixelSize: 28
-                                    opacity: enabled ? 1.0 : 0.3
-                                    color: parent.down || !enabled?  "#e74c3c" : "#ffffff"
-                                    horizontalAlignment: Text.AlignHCenter
-                                    verticalAlignment: Text.AlignVCenter
-                                    elide: Text.ElideRight
-                                }
+                            color: window.steamActive
+                                   ? "#ffffff"
+                                   : (steamArea.pressed ? Qt.rgba(1,1,1,0.15) : "transparent")
+                            border.color: "#ffffff"
+                            border.width: 1
+                            opacity: connectionStatus.connected ? 1.0 : 0.3
 
-                                background: Rectangle {
-                                    implicitWidth: 190
-                                    implicitHeight: 58
-                                    opacity: enabled ? 1 : 0.3
-                                    color: "transparent"
-                                    border.color: parent.down|| !enabled ? "#e74c3c" : "#ffffff"
-                                    border.width: 1
-                                    radius: 20
-                                }
-
-                                enabled: connectionStatus.connected && !window.steamActive
-                                onClicked: {
-                                    window.steamActive = true
-                                    controller.startSteam()
-                                    //stackView.push(steamScreen)
-                                }
-                            }
-                            Button {
-                                contentItem: Image {
-                                    source: "svgs/pause-white.svg"
-                                    //sourceSize: Qt.size(60, 60)
-                                    fillMode: Image.PreserveAspectFit
-                                    horizontalAlignment: Image.AlignHCenter
-                                    verticalAlignment: Image.AlignVCenter
-                                    smooth: true
-                                    opacity: enabled ? 1.0 : 0.3
-                                    anchors.centerIn: parent
-                                }
-
-                                background: Rectangle {
-                                    implicitWidth: 58
-                                    implicitHeight: 58
-                                    opacity: enabled ? 1 : 0.3
-                                    color: "#b12a2a"
-                                    radius: 16
-                                }
-                                enabled: connectionStatus.connected
+                            Rectangle {
+                                anchors.fill: parent
+                                anchors.margins: 1
+                                color: "transparent"
+                                border.color: window.steamActive ? Qt.rgba(0,0,0,0.25) : "transparent"
+                                border.width: 1
+                                radius: parent.radius - 1
                                 visible: window.steamActive
+                            }
+
+                            Text {
+                                anchors.centerIn: parent
+                                text: window.steamActive ? "STEAMING" : "STEAM"
+                                font.pixelSize: window.steamActive ? 22 : 28
+                                font.bold: window.steamActive
+                                color: window.steamActive ? "#000000" : "#ffffff"
+                            }
+
+                            MouseArea {
+                                id: steamArea
+                                anchors.fill: parent
+                                enabled: connectionStatus.connected
                                 onClicked: {
-                                    window.steamActive = false
-                                    controller.stopSteam()
+                                    if (window.steamActive) {
+                                        window.steamActive = false
+                                        controller.stopSteam()
+                                    } else {
+                                        window.steamActive = true
+                                        controller.startSteam()
+                                    }
                                 }
                             }
                         }
                         
-                        RowLayout {
-                            spacing: 10
-                            /*Button {
-                                Layout.preferredWidth: 200
-                                Layout.preferredHeight: 60
-                                text: "FLUSH"
-                                font.pixelSize: 28
-                                //font.bold: true
+                        // ── FLUSH toggle button ─────────────────────────────
+                        // Single button: tap to start flush, tap again to stop.
+                        // Active state = depressed look (filled white bg, dark text).
+                        Rectangle {
+                            id: flushBtn
+                            Layout.preferredWidth: 190
+                            Layout.preferredHeight: 58
+                            radius: 12
 
-                                //Material.background: "#f39c12"
-                                Material.background: "transparent"
-                                Material.foreground: "white"
+                            // Visual states:
+                            // - inactive + idle    → transparent fill, white outline, white text
+                            // - inactive + pressed → faint white fill (touch feedback)
+                            // - active             → solid white fill, dark text (depressed look)
+                            color: window.flushActive
+                                   ? "#ffffff"
+                                   : (flushArea.pressed ? Qt.rgba(1,1,1,0.15) : "transparent")
+                            border.color: "#ffffff"
+                            border.width: 1
+                            opacity: connectionStatus.connected ? 1.0 : 0.3
 
-                                enabled: connectionStatus.connected && !window.flushActive
-                                onClicked: {
-                                    window.flushActive = true
-                                    controller.startFlush()
-                                    //stackView.push(flushScreen)
-                                }
-                            }*/
-                            Button {
-                                text: qsTr("FLUSH")
-                                //Layout.preferredWidth: 180
-                                //Layout.preferredHeight: 64
-
-                                contentItem: Text {
-                                    text: parent.text
-                                    font.pixelSize: 28
-                                    opacity: enabled ? 1.0 : 0.3
-                                    color: parent.down || !enabled ?  "#f39c12" : "#ffffff"
-                                    horizontalAlignment: Text.AlignHCenter
-                                    verticalAlignment: Text.AlignVCenter
-                                    elide: Text.ElideRight
-                                }
-
-                                background: Rectangle {
-                                    implicitWidth: 190
-                                    implicitHeight: 58
-                                    opacity: enabled ? 1 : 0.3
-                                    color: "transparent"
-                                    border.color: parent.down || !enabled ? "#f39c12" : "#ffffff"
-                                    border.width: 1
-                                    radius: 20
-                                }
-
-                                enabled: connectionStatus.connected && !window.flushActive
-                                onClicked: {
-                                    window.flushActive = true
-                                    controller.startFlush()
-                                    //stackView.push(flushScreen)
-                                }
+                            // Subtle inner shadow when active for neumorphic depressed feel
+                            Rectangle {
+                                anchors.fill: parent
+                                anchors.margins: 1
+                                color: "transparent"
+                                border.color: window.flushActive ? Qt.rgba(0,0,0,0.25) : "transparent"
+                                border.width: 1
+                                radius: parent.radius - 1
+                                visible: window.flushActive
                             }
-                            /*Button {
-                                text: "STOP"
-                                Layout.preferredWidth: 64
-                                Layout.preferredHeight: 64
-                                Material.background: "#b12a2a"
-                                enabled: connectionStatus.connected
-                                visible: window.flushActive
-                                onClicked: {
-                                    window.flushActive = false
-                                    controller.stopFlush()
-                                }
-                            }*/
-                            Button {
-                                contentItem: Image {
-                                    source: "svgs/pause-white.svg"
-                                    //sourceSize: Qt.size(60, 60)
-                                    fillMode: Image.PreserveAspectFit
-                                    horizontalAlignment: Image.AlignHCenter
-                                    verticalAlignment: Image.AlignVCenter
-                                    smooth: true
-                                    opacity: enabled ? 1.0 : 0.3
-                                    anchors.centerIn: parent
-                                }
 
-                                background: Rectangle {
-                                    implicitWidth: 58
-                                    implicitHeight: 58
-                                    opacity: enabled ? 1 : 0.3
-                                    color: "#b12a2a"
-                                    radius: 16
-                                }
+                            Text {
+                                anchors.centerIn: parent
+                                text: window.flushActive ? "FLUSHING" : "FLUSH"
+                                font.pixelSize: window.flushActive ? 22 : 28
+                                font.bold: window.flushActive
+                                color: window.flushActive ? "#000000" : "#ffffff"
+                            }
+
+                            MouseArea {
+                                id: flushArea
+                                anchors.fill: parent
                                 enabled: connectionStatus.connected
-                                visible: window.flushActive
                                 onClicked: {
-                                    window.flushActive = false
-                                    controller.stopFlush()
+                                    if (window.flushActive) {
+                                        window.flushActive = false
+                                        controller.stopFlush()
+                                    } else {
+                                        window.flushActive = true
+                                        controller.startFlush()
+                                    }
                                 }
                             }
                         }
@@ -490,7 +540,6 @@ ApplicationWindow {
                         }
                     }
                 }
-            }
 
             // ── Steam priming overlay ──────────────────────────────────────
             // Visible while firmware is in STATE_PRIMING_STEAM.
@@ -600,7 +649,7 @@ ApplicationWindow {
         id: brewScreen
 
         Rectangle {
-            color: "#101318"
+            color: "#000000"
 
             // ── Priming overlay ────────────────────────────────────────────
             // Visible while firmware is in STATE_PRIMING_BREW.
@@ -706,178 +755,156 @@ ApplicationWindow {
             }
             // ── End priming overlay ────────────────────────────────────────
 
+            // ── Back arrow — top-left, matches settings screen style ─────
+            Item {
+                anchors.top: parent.top
+                anchors.left: parent.left
+                width: 72
+                height: 72
+                z: 50
+
+                Text {
+                    anchors.centerIn: parent
+                    text: "←"
+                    color: "#ffffff"
+                    font.pixelSize: 34
+                    font.bold: true
+                }
+
+                MouseArea {
+                    anchors.fill: parent
+                    onClicked: {
+                        stackView.pop()
+                        controller.stopBrew()
+                    }
+                }
+            }
+
+            // ── Huge middle tap area: start brew when ready, stop when brewing ──
+            // Covers most of screen. Excludes top 90px (back arrow), bottom 150px
+            // (debug row + E-stop), 80px each side.
+            MouseArea {
+                id: brewStartTapArea
+                anchors.top: parent.top
+                anchors.topMargin: 90
+                anchors.left: parent.left
+                anchors.leftMargin: 80
+                anchors.right: parent.right
+                anchors.rightMargin: 80
+                anchors.bottom: parent.bottom
+                anchors.bottomMargin: 150
+                enabled: connectionStatus.connected && (
+                         (window.currentState === "HEATING_BREW" && window.scalesSettled) ||
+                         window.currentState === "BREWING")
+                z: 5
+                onClicked: {
+                    if (window.currentState === "BREWING") {
+                        controller.stopBrew()
+                    } else {
+                        // Start brew: clear charts, begin
+                        coffeeChart.dataPoints   = []
+                        pressureChart.dataPoints = []
+                        coffeeChart.startTime    = null
+                        pressureChart.startTime  = null
+                        coffeeChart.maxTime      = 30
+                        pressureChart.maxTime    = 30
+                        coffeeChart.requestPaint()
+                        pressureChart.requestPaint()
+                        controller.beginBrew()
+                    }
+                }
+            }
+
             ColumnLayout {
                 anchors.fill: parent
                 anchors.topMargin: 20
-                anchors.leftMargin: 50
-                anchors.rightMargin: 50
-                anchors.bottomMargin: 50
+                anchors.leftMargin: 40
+                anchors.rightMargin: 40
+                anchors.bottomMargin: 60
                 spacing: 20
 
-                // Top-info card -----------------------------------------------------------
-                Rectangle {
-                    id: infoCard
+                // Top-info row — transparent, white text.
+                // Padded 80px on each side so Mass/Time/Thermoblock don't
+                // overlap the back arrow (top-left) or E-stop (top-right).
+                Item {
                     Layout.fillWidth: true
-                    height: 72
-                    color: "#34495e"
-                    radius: 8
-                    //border.color: Qt.darker("#e0e0e0", 1.5)
-                    //border.width: 1
+                    Layout.preferredHeight: 80
 
-                    RowLayout {
+                    // Anchor-based layout: Time is locked to window horizontal
+                    // center; Mass aligned to far left of content area;
+                    // Thermoblock to far right. Symmetric and predictable.
+                    Item {
                         anchors.fill: parent
-                        //anchors.margins: 8
-                        anchors.leftMargin: 15
-                        anchors.rightMargin: 15
-                        anchors.topMargin: 1
-                        anchors.bottomMargin: 1
-                        
-                        Button {
-                            Layout.alignment: Qt.AlignLeft
 
-                            contentItem: Image {
-                                source: "svgs/square-chevron-left.svg"
-                                fillMode: Image.PreserveAspectFit
-
-                                smooth: true
-                                opacity: enabled ? 1.0 : 0.3
-                                anchors.centerIn: parent
-                            }
-
-                            background: Rectangle {
-                                implicitWidth: 58
-                                implicitHeight: 58
-                                opacity: enabled ? 1 : 0.3
-                                color: "#95a5a6"
-                                border.color: "white"
-                                border.width: 1
-                                radius: 16
-                            }
-
-                            onClicked: {
-                                stackView.pop()
-                                controller.stopBrew()
-                            }
-                        }
-
-                        // XL: Current mass
+                        // ── Mass — left column ─────────────────────────
                         ColumnLayout {
-                            Layout.alignment: Qt.AlignHCenter
-                            Layout.fillWidth: true
+                            anchors.left: parent.left
+                            anchors.leftMargin: 80
+                            anchors.verticalCenter: parent.verticalCenter
                             spacing: 2
                             Text {
+                                Layout.alignment: Qt.AlignHCenter
                                 text: "Mass"
-                                color: "#aaaaaa"
-                                font { pixelSize: 13 }
-                                Layout.alignment: Qt.AlignHCenter
+                                color: "#888888"
+                                font.pixelSize: 13
                             }
                             Text {
-                                text: window.currentWeight.toFixed(1) + " g"
-                                color: "#4caf50"
-                                font { pixelSize: 48; bold: true }
                                 Layout.alignment: Qt.AlignHCenter
+                                horizontalAlignment: Text.AlignHCenter
+                                text: {
+                                    if (!isFinite(window.currentWeight)) return "—"
+                                    var n = window.currentWeight
+                                    var sign = (n < 0 ? "−" : " ")
+                                    return sign + Math.abs(n).toFixed(1) + " g"
+                                }
+                                color: "#ffffff"
+                                font { pixelSize: 48; bold: true; family: "Consolas" }
                             }
                         }
 
-                        // XL: Brew timer
+                        // ── Time — exactly centered in window ──────────
+                        // (the window centers on stackView; this Item fills
+                        // its parent, which fills the brew screen, so the
+                        // horizontalCenter aligns with window center)
                         ColumnLayout {
-                            Layout.alignment: Qt.AlignHCenter
-                            Layout.fillWidth: true
+                            anchors.horizontalCenter: parent.horizontalCenter
+                            anchors.verticalCenter: parent.verticalCenter
                             spacing: 2
                             Text {
-                                text: "Time"
-                                color: "#aaaaaa"
-                                font { pixelSize: 13 }
                                 Layout.alignment: Qt.AlignHCenter
+                                text: "Time"
+                                color: "#888888"
+                                font.pixelSize: 13
                             }
                             Text {
+                                Layout.alignment: Qt.AlignHCenter
+                                horizontalAlignment: Text.AlignHCenter
                                 text: window.brewTime
                                 color: "#ffffff"
-                                font { pixelSize: 48; bold: true }
-                                Layout.alignment: Qt.AlignHCenter
+                                font { pixelSize: 48; bold: true; family: "Consolas" }
                             }
                         }
 
-                        // Secondary info: thermoblock temp + pump
+                        // ── Thermoblock temp — right column ─────────────
                         ColumnLayout {
-                            Layout.alignment: Qt.AlignHCenter
-                            spacing: 4
+                            anchors.right: parent.right
+                            anchors.rightMargin: 80
+                            anchors.verticalCenter: parent.verticalCenter
+                            spacing: 2
                             Text {
+                                Layout.alignment: Qt.AlignHCenter
                                 text: "Thermoblock"
-                                color: "#aaaaaa"
-                                font { pixelSize: 12 }
-                                Layout.alignment: Qt.AlignHCenter
+                                color: "#888888"
+                                font.pixelSize: 13
                             }
                             Text {
+                                Layout.alignment: Qt.AlignHCenter
+                                horizontalAlignment: Text.AlignHCenter
                                 text: window.brewTempActual.toFixed(1) + "°C"
-                                color: "#ff5252"
-                                font { pixelSize: 20; bold: true }
-                                Layout.alignment: Qt.AlignHCenter
-                            }
-                            Text {
-                                text: window.currentPumpPower.toFixed(0) + "% pump"
-                                color: "#29b6f6"
-                                font { pixelSize: 14 }
-                                Layout.alignment: Qt.AlignHCenter
+                                color: "#ffffff"
+                                font { pixelSize: 48; bold: true; family: "Consolas" }
                             }
                         }
-
-                            Button {
-                                id: brew_now
-                                Layout.alignment: Qt.AlignVCenter | Qt.AlignRight
-                                contentItem: Image {
-                                    source: "svgs/play.svg"
-                                    fillMode: Image.PreserveAspectFit
-
-                                    smooth: true
-                                    opacity: enabled ? 1.0 : 0.3
-                                    anchors.centerIn: parent
-                                }
-
-                                background: Rectangle {
-                                    implicitWidth: 58
-                                    implicitHeight: 58
-                                    opacity: enabled ? 1 : 0.3
-                                    color: (window.currentState === "HEATING_BREW" && window.brewTempActual >= window.brewTargetTemp - 3.0 && window.scalesSettled) ? "#27ae60" : "#7f8c8d"
-                                    radius: 16
-                                }
-                                enabled: connectionStatus.connected && window.currentState === "HEATING_BREW" && window.scalesSettled
-                                visible: window.currentState === "HEATING_BREW"
-                                onClicked: {
-                                    // Clear charts when starting new brew
-                                    coffeeChart.dataPoints   = []
-                                    pressureChart.dataPoints = []
-                                    coffeeChart.startTime    = null
-                                    pressureChart.startTime  = null
-                                    coffeeChart.maxTime      = 30
-                                    pressureChart.maxTime    = 30
-                                    coffeeChart.requestPaint()
-                                    pressureChart.requestPaint()
-                                    controller.beginBrew()
-                                }
-                            }
-                            Button {
-                                Layout.alignment: Qt.AlignVCenter | Qt.AlignRight
-                                contentItem: Image {
-                                    source: "svgs/pause-white.svg"
-                                    fillMode: Image.PreserveAspectFit
-
-                                    smooth: true
-                                    opacity: enabled ? 1.0 : 0.3
-                                    anchors.centerIn: parent
-                                }
-
-                                background: Rectangle {
-                                    implicitWidth: 58
-                                    implicitHeight: 58
-                                    opacity: enabled ? 1 : 0.3
-                                    color: "#b12a2a"
-                                    radius: 16
-                                }
-                                enabled: window.currentState != "IDLE"
-                                visible: window.currentState === "BREWING" | window.currentState === "IDLE"
-                                onClicked: controller.stopBrew()
-                            }
                     }
                 }
                 
@@ -891,9 +918,7 @@ ApplicationWindow {
                     Rectangle {
                         Layout.fillWidth: true
                         Layout.fillHeight: true
-                        color: "#34495e"
-                        //border.color: "#7f8c8d"
-                        //border.width: 1
+                        color: "#1a1a1a"
                         radius: 5
                         
                         Item {
@@ -906,7 +931,8 @@ ApplicationWindow {
                                 font.pixelSize: 12
                                 anchors.left: parent.left
                                 anchors.top: parent.top
-                                anchors.margins: 5
+                                anchors.leftMargin: 4
+                                anchors.topMargin: 4
                             }
                             
                             Canvas {
@@ -962,11 +988,13 @@ ApplicationWindow {
                                     ctx.font = "20px Arial"
                                     var weightText = window.currentWeight.toFixed(1) + " g"
                                     var textWidth = ctx.measureText(weightText).width
-                                    ctx.fillText(weightText, width - textWidth - 5, 15)
+                                    // Position value clear of y-axis labels,
+                                    // aligned vertically with the chart title
+                                    ctx.fillText(weightText, width - textWidth - 60, 30)
                                     
                                     // Draw data line
                                     if (dataPoints.length > 0) {
-                                        ctx.strokeStyle = "#27ae60"
+                                        ctx.strokeStyle = "#00bcd4"  // cyan
                                         ctx.lineWidth = 2
                                         ctx.beginPath()
                                         
@@ -987,7 +1015,7 @@ ApplicationWindow {
                                             var lastPoint = dataPoints[dataPoints.length - 1]
                                             var lastX = (lastPoint.time / maxTime) * width
                                             var lastY = height - (lastPoint.weight / maxWeight) * height
-                                            ctx.fillStyle = "#27ae60"
+                                            ctx.fillStyle = "#00bcd4"  // cyan dot
                                             ctx.beginPath()
                                             ctx.arc(lastX, lastY, 3, 0, 2 * Math.PI)
                                             ctx.fill()
@@ -1023,9 +1051,7 @@ ApplicationWindow {
                     Rectangle {
                         Layout.fillWidth: true
                         Layout.fillHeight: true
-                        color: "#34495e"
-                        //border.color: "#7f8c8d"
-                        //border.width: 1
+                        color: "#1a1a1a"
                         radius: 5
                         
                         Item {
@@ -1038,7 +1064,8 @@ ApplicationWindow {
                                 font.pixelSize: 12
                                 anchors.left: parent.left
                                 anchors.top: parent.top
-                                anchors.margins: 5
+                                anchors.leftMargin: 4
+                                anchors.topMargin: 4
                             }
                             
                             Canvas {
@@ -1094,11 +1121,13 @@ ApplicationWindow {
                                     ctx.font = "20px Arial"
                                     var pressureText = window.currentPressure.toFixed(1) + " bar"
                                     var textWidth_ = ctx.measureText(pressureText).width
-                                    ctx.fillText(pressureText, width - textWidth_ - 5, 15)
+                                    // Position value clear of y-axis labels,
+                                    // aligned vertically with the chart title
+                                    ctx.fillText(pressureText, width - textWidth_ - 60, 30)
                                     
                                     // Draw data line
                                     if (dataPoints.length > 0) {
-                                        ctx.strokeStyle = "#e74c3c"
+                                        ctx.strokeStyle = "#9b59b6"  // purple
                                         ctx.lineWidth = 2
                                         ctx.beginPath()
                                         
@@ -1119,7 +1148,7 @@ ApplicationWindow {
                                             var lastPoint = dataPoints[dataPoints.length - 1]
                                             var lastX = (lastPoint.time / maxTime) * width
                                             var lastY = height - (lastPoint.pressure / maxPressure) * height
-                                            ctx.fillStyle = "#e74c3c"
+                                            ctx.fillStyle = "#9b59b6"  // purple dot
                                             ctx.beginPath()
                                             ctx.arc(lastX, lastY, 3, 0, 2 * Math.PI)
                                             ctx.fill()
@@ -1365,52 +1394,58 @@ ApplicationWindow {
         id: settingsScreen
 
         Rectangle {
-            color: "#2c3e50"
+            color: "#000000"
 
-            /* dim background */
-            Rectangle {
-                anchors.fill: parent
-                color: Qt.rgba(0, 0, 0, 0.35)
+            // ── Back arrow — top-left, no outline, large tap area ─────
+            Item {
+                id: backArrow
+                anchors.top: parent.top
+                anchors.left: parent.left
+                width: 72
+                height: 72
+                z: 50
+
+                Text {
+                    anchors.centerIn: parent
+                    text: "←"
+                    color: "#ffffff"
+                    font.pixelSize: 34
+                    font.bold: true
+                }
+
+                MouseArea {
+                    anchors.fill: parent
+                    onClicked: stackView.pop()
+                }
             }
 
-            /* frosted-glass card */
-            Rectangle {
+            // Settings card — auto-saves on each +/- tap. No local state,
+            // buttons operate directly on window.brewTargetTemp / steamTargetTemp
+            // and push the new value to the controller immediately.
+            Item {
                 id: card
-                anchors.centerIn: parent
-                width:  Math.min(parent.width - 40, 360)
-                height: settingsCol.implicitHeight + 48
-                color:  Qt.rgba(1, 1, 1, 0.10)
-                radius: 16
-                border.color: Qt.rgba(1, 1, 1, 0.15)
-                border.width: 1
+                anchors.top: parent.top
+                anchors.topMargin: 90
+                anchors.horizontalCenter: parent.horizontalCenter
+                width:  Math.min(parent.width - 80, 440)
+                height: settingsCol.implicitHeight
 
-                // Working values — edited live, applied on SAVE
-                property real brewVal:  window.brewTargetTemp
-                property real steamVal: window.steamTargetTemp
+                function saveTemps() {
+                    controller.setTemperatures(window.brewTargetTemp, window.steamTargetTemp)
+                }
 
                 ColumnLayout {
                     id: settingsCol
                     anchors.centerIn: parent
-                    width: parent.width - 48
+                    width: parent.width - 32
                     spacing: 20
 
                     // ── Header ──────────────────────────────────────────────
-                    RowLayout {
+                    Text {
                         Layout.alignment: Qt.AlignHCenter
-                        spacing: 14
-                        Image {
-                            Layout.alignment: Qt.AlignVCenter
-                            source: "svgs/sliders-horizontal.svg"
-                            sourceSize: Qt.size(26, 26)
-                            smooth: true
-                            fillMode: Image.PreserveAspectFit
-                        }
-                        Text {
-                            Layout.alignment: Qt.AlignVCenter
-                            text: "Temperature Settings"
-                            color: "white"
-                            font { pixelSize: 20; bold: true }
-                        }
+                        text: "TEMPERATURE SETTINGS"
+                        color: "#ffffff"
+                        font { pixelSize: 18; bold: true }
                     }
 
                     // ── Brew temperature ─────────────────────────────────────
@@ -1420,8 +1455,8 @@ ApplicationWindow {
 
                         Text {
                             text: "Brew Temp  (60 – 110°C)"
-                            color: "#aaaaaa"
-                            font.pixelSize: 13
+                            color: "#888888"
+                            font.pixelSize: 12
                             Layout.alignment: Qt.AlignHCenter
                         }
 
@@ -1429,48 +1464,58 @@ ApplicationWindow {
                             Layout.fillWidth: true
                             spacing: 0
 
-                            // Decrement button
+                            // Decrement button — white outline
                             Rectangle {
-                                width: 64; height: 64
-                                radius: 12
-                                color: brewMinusArea.pressed ? "#1a6b38" : "#27ae60"
+                                width: 60; height: 60
+                                radius: 2
+                                color: brewMinusArea.pressed ? Qt.rgba(1,1,1,0.15) : "transparent"
+                                border.color: "#ffffff"
+                                border.width: 1
                                 Text {
                                     anchors.centerIn: parent
                                     text: "−"
-                                    font { pixelSize: 32; bold: true }
-                                    color: "white"
+                                    font { pixelSize: 30; bold: true }
+                                    color: "#ffffff"
                                 }
                                 MouseArea {
                                     id: brewMinusArea
                                     anchors.fill: parent
-                                    onClicked: card.brewVal = Math.max(60.0, Math.round((card.brewVal - 0.5) * 10) / 10)
+                                    onClicked: {
+                                        window.brewTargetTemp = Math.max(60.0, Math.round(window.brewTargetTemp - 1))
+                                        card.saveTemps()
+                                    }
                                 }
                             }
 
                             // Value display
                             Text {
                                 Layout.fillWidth: true
-                                text: card.brewVal.toFixed(1) + "°C"
-                                color: "#27ae60"
-                                font { pixelSize: 34; bold: true }
+                                text: window.brewTargetTemp.toFixed(1) + "°C"
+                                color: "#ffffff"
+                                font { pixelSize: 32; bold: true }
                                 horizontalAlignment: Text.AlignHCenter
                             }
 
                             // Increment button
                             Rectangle {
-                                width: 64; height: 64
-                                radius: 12
-                                color: brewPlusArea.pressed ? "#1a6b38" : "#27ae60"
+                                width: 60; height: 60
+                                radius: 2
+                                color: brewPlusArea.pressed ? Qt.rgba(1,1,1,0.15) : "transparent"
+                                border.color: "#ffffff"
+                                border.width: 1
                                 Text {
                                     anchors.centerIn: parent
                                     text: "+"
-                                    font { pixelSize: 32; bold: true }
-                                    color: "white"
+                                    font { pixelSize: 30; bold: true }
+                                    color: "#ffffff"
                                 }
                                 MouseArea {
                                     id: brewPlusArea
                                     anchors.fill: parent
-                                    onClicked: card.brewVal = Math.min(110.0, Math.round((card.brewVal + 0.5) * 10) / 10)
+                                    onClicked: {
+                                        window.brewTargetTemp = Math.min(110.0, Math.round(window.brewTargetTemp + 1))
+                                        card.saveTemps()
+                                    }
                                 }
                             }
                         }
@@ -1483,8 +1528,8 @@ ApplicationWindow {
 
                         Text {
                             text: "Steam Temp  (110 – 150°C)"
-                            color: "#aaaaaa"
-                            font.pixelSize: 13
+                            color: "#888888"
+                            font.pixelSize: 12
                             Layout.alignment: Qt.AlignHCenter
                         }
 
@@ -1493,96 +1538,117 @@ ApplicationWindow {
                             spacing: 0
 
                             Rectangle {
-                                width: 64; height: 64
-                                radius: 12
-                                color: steamMinusArea.pressed ? "#922b21" : "#e74c3c"
+                                width: 60; height: 60
+                                radius: 2
+                                color: steamMinusArea.pressed ? Qt.rgba(1,1,1,0.15) : "transparent"
+                                border.color: "#ffffff"
+                                border.width: 1
                                 Text {
                                     anchors.centerIn: parent
                                     text: "−"
-                                    font { pixelSize: 32; bold: true }
-                                    color: "white"
+                                    font { pixelSize: 30; bold: true }
+                                    color: "#ffffff"
                                 }
                                 MouseArea {
                                     id: steamMinusArea
                                     anchors.fill: parent
-                                    onClicked: card.steamVal = Math.max(110.0, Math.round((card.steamVal - 0.5) * 10) / 10)
+                                    onClicked: {
+                                        window.steamTargetTemp = Math.max(110.0, Math.round(window.steamTargetTemp - 1))
+                                        card.saveTemps()
+                                    }
                                 }
                             }
 
                             Text {
                                 Layout.fillWidth: true
-                                text: card.steamVal.toFixed(1) + "°C"
-                                color: "#e74c3c"
-                                font { pixelSize: 34; bold: true }
+                                text: window.steamTargetTemp.toFixed(1) + "°C"
+                                color: "#ffffff"
+                                font { pixelSize: 32; bold: true }
                                 horizontalAlignment: Text.AlignHCenter
                             }
 
                             Rectangle {
-                                width: 64; height: 64
-                                radius: 12
-                                color: steamPlusArea.pressed ? "#922b21" : "#e74c3c"
+                                width: 60; height: 60
+                                radius: 2
+                                color: steamPlusArea.pressed ? Qt.rgba(1,1,1,0.15) : "transparent"
+                                border.color: "#ffffff"
+                                border.width: 1
                                 Text {
                                     anchors.centerIn: parent
                                     text: "+"
-                                    font { pixelSize: 32; bold: true }
-                                    color: "white"
+                                    font { pixelSize: 30; bold: true }
+                                    color: "#ffffff"
                                 }
                                 MouseArea {
                                     id: steamPlusArea
                                     anchors.fill: parent
-                                    onClicked: card.steamVal = Math.min(150.0, Math.round((card.steamVal + 0.5) * 10) / 10)
+                                    onClicked: {
+                                        window.steamTargetTemp = Math.min(150.0, Math.round(window.steamTargetTemp + 1))
+                                        card.saveTemps()
+                                    }
                                 }
                             }
                         }
                     }
 
-                    // ── Scale controls ───────────────────────────────────────
+                    // ── SCALE section header ─────────────────────────────────
+                    Text {
+                        Layout.alignment: Qt.AlignHCenter
+                        Layout.topMargin: 12
+                        text: "SCALE"
+                        color: "#ffffff"
+                        font { pixelSize: 18; bold: true }
+                    }
+
                     RowLayout {
                         Layout.fillWidth: true
                         spacing: 10
-                        Text {
-                            text: "Scale:"
-                            color: "white"
-                            font.pixelSize: 15
-                        }
-                        Button {
-                            text: "TARE"
-                            Material.background: "#3498db"
-                            Layout.fillWidth: true
-                            onClicked: controller.tareScales()
-                        }
-                        Button {
-                            text: "CAL"
-                            Material.background: "#f39c12"
-                            Layout.fillWidth: true
-                            onClicked: calDialog.open()
-                        }
-                    }
 
-                    // ── Action buttons ───────────────────────────────────────
-                    RowLayout {
-                        Layout.alignment: Qt.AlignHCenter
-                        spacing: 16
-                        Button {
-                            text: "SAVE"
-                            Material.background: "#27ae60"
-                            Material.elevation: 2
-                            onClicked: {
-                                window.brewTargetTemp  = card.brewVal
-                                window.steamTargetTemp = card.steamVal
-                                controller.setTemperatures(card.brewVal, card.steamVal)
-                                stackView.pop()
+                        Rectangle {
+                            Layout.fillWidth: true
+                            height: 48
+                            color: tareArea.pressed ? Qt.rgba(1,1,1,0.15) : "transparent"
+                            border.color: "#ffffff"
+                            border.width: 1
+                            radius: 2
+                            Text {
+                                anchors.centerIn: parent
+                                text: "TARE"
+                                color: "#ffffff"
+                                font.pixelSize: 14
+                                font.bold: true
+                            }
+                            MouseArea {
+                                id: tareArea
+                                anchors.fill: parent
+                                onClicked: controller.tareScales()
                             }
                         }
-                        Button {
-                            text: "BACK"
-                            Material.background: "#7f8c8d"
-                            Material.elevation: 2
-                            onClicked: stackView.pop()
+
+                        Rectangle {
+                            Layout.fillWidth: true
+                            height: 48
+                            color: calArea.pressed ? Qt.rgba(1,1,1,0.15) : "transparent"
+                            border.color: "#ffffff"
+                            border.width: 1
+                            radius: 2
+                            Text {
+                                anchors.centerIn: parent
+                                text: "CAL"
+                                color: "#ffffff"
+                                font.pixelSize: 14
+                                font.bold: true
+                            }
+                            MouseArea {
+                                id: calArea
+                                anchors.fill: parent
+                                onClicked: calDialog.open()
+                            }
                         }
                     }
                 }
             }
+
         }
     }
     
@@ -1650,70 +1716,202 @@ ApplicationWindow {
             }
         }
     }*/
-        // Calibration Dialog
+        // Calibration Dialog — black bg, white outlines, auto-tares on open.
     Dialog {
         id: calDialog
         anchors.centerIn: parent
-        width: 320
-        height: 280
-        // modal: true
+        width: 440
+        height: 340
+        padding: 0
+        modal: true
 
-        Rectangle {
+        onOpened: controller.tareScales()
+
+        background: Rectangle {
+            color: "#000000"
+            border.color: "#ffffff"
+            border.width: 1
+            radius: 4
+        }
+
+        contentItem: Item {
             anchors.fill: parent
-            color: "#2c3e50"
-            radius: 10
+
+            // Close X button — top right
+            Rectangle {
+                anchors.top: parent.top
+                anchors.right: parent.right
+                anchors.margins: 10
+                width: 32
+                height: 32
+                color: dlgCloseArea.pressed ? Qt.rgba(1,1,1,0.2) : "transparent"
+                border.color: "#ffffff"
+                border.width: 1
+                radius: 2
+                z: 2
+
+                Text {
+                    anchors.centerIn: parent
+                    text: "✕"
+                    color: "#ffffff"
+                    font.pixelSize: 16
+                    font.bold: true
+                }
+
+                MouseArea {
+                    id: dlgCloseArea
+                    anchors.fill: parent
+                    onClicked: calDialog.close()
+                }
+            }
 
             ColumnLayout {
                 anchors.fill: parent
-                anchors.margins: 20
-                spacing: 15
+                anchors.topMargin: 24
+                anchors.leftMargin: 24
+                anchors.rightMargin: 24
+                anchors.bottomMargin: 20
+                spacing: 14
 
                 Text {
-                    text: "Scale Calibration"
-                    color: "white"
-                    font.pixelSize: 16
+                    text: "SCALE CALIBRATION"
+                    color: "#ffffff"
+                    font.pixelSize: 18
                     font.bold: true
                     Layout.alignment: Qt.AlignHCenter
                 }
 
                 Text {
-                    text: "Place known weight on scale (grams):"
-                    color: "white"
+                    text: "Place calibration weight on scale, then press CALIBRATE"
+                    color: "#888888"
                     font.pixelSize: 12
+                    horizontalAlignment: Text.AlignHCenter
+                    wrapMode: Text.WordWrap
+                    Layout.fillWidth: true
                     Layout.alignment: Qt.AlignHCenter
                 }
 
-                SpinBox {
-                    id: calWeightSpin
-                    width: 250
-                    from: 1
-                    to: 1000
-                    value: 200
-                    stepSize: 100
+                // Live weight display
+                Rectangle {
+                    Layout.alignment: Qt.AlignHCenter
                     Layout.fillWidth: true
-                    Layout.alignment: Qt.AlignHCenter | Qt.AlignVCenter
-                    Material.foreground: "#FFEB3B"
-                    Material.accent: "#e74c3c"
+                    Layout.preferredHeight: 76
+                    color: "#000000"
+                    radius: 2
+                    border.color: "#ffffff"
+                    border.width: 1
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: (isFinite(window.currentWeight)
+                                ? window.currentWeight.toFixed(1)
+                                : "—") + " g"
+                        color: "#ffffff"
+                        font.pixelSize: 40
+                        font.family: "Consolas"
+                        font.bold: true
+                    }
                 }
 
+                // Known weight input — custom -/+ controls for black theme
                 RowLayout {
                     Layout.alignment: Qt.AlignHCenter
-                    spacing: 10
+                    spacing: 8
 
-                    Button {
+                    Text {
+                        text: "Known weight (g):"
+                        color: "#ffffff"
+                        font.pixelSize: 14
+                    }
+
+                    // Minus button
+                    Rectangle {
+                        width: 40
+                        height: 40
+                        color: calMinusArea.pressed ? Qt.rgba(1,1,1,0.15) : "transparent"
+                        border.color: "#ffffff"
+                        border.width: 1
+                        radius: 2
+                        Text {
+                            anchors.centerIn: parent
+                            text: "−"
+                            color: "#ffffff"
+                            font { pixelSize: 22; bold: true }
+                        }
+                        MouseArea {
+                            id: calMinusArea
+                            anchors.fill: parent
+                            onClicked: calWeightSpin.value = Math.max(1, calWeightSpin.value - calWeightSpin.stepSize)
+                        }
+                    }
+
+                    // Value display (invisible SpinBox holds the actual value)
+                    Item {
+                        width: 80
+                        height: 40
+                        Text {
+                            anchors.centerIn: parent
+                            text: calWeightSpin.value + " g"
+                            color: "#ffffff"
+                            font { pixelSize: 20; bold: true }
+                        }
+                        SpinBox {
+                            id: calWeightSpin
+                            visible: false
+                            from: 1
+                            to: 5000
+                            value: 100
+                            stepSize: 50
+                        }
+                    }
+
+                    // Plus button
+                    Rectangle {
+                        width: 40
+                        height: 40
+                        color: calPlusArea.pressed ? Qt.rgba(1,1,1,0.15) : "transparent"
+                        border.color: "#ffffff"
+                        border.width: 1
+                        radius: 2
+                        Text {
+                            anchors.centerIn: parent
+                            text: "+"
+                            color: "#ffffff"
+                            font { pixelSize: 22; bold: true }
+                        }
+                        MouseArea {
+                            id: calPlusArea
+                            anchors.fill: parent
+                            onClicked: calWeightSpin.value = Math.min(5000, calWeightSpin.value + calWeightSpin.stepSize)
+                        }
+                    }
+                }
+
+                // Calibrate button — white outline
+                Rectangle {
+                    Layout.alignment: Qt.AlignHCenter
+                    Layout.preferredWidth: 220
+                    Layout.preferredHeight: 48
+                    color: calBtnArea.pressed ? Qt.rgba(1,1,1,0.15) : "transparent"
+                    border.color: "#ffffff"
+                    border.width: 2
+                    radius: 2
+
+                    Text {
+                        anchors.centerIn: parent
                         text: "CALIBRATE"
-                        bottomPadding: 14
-                        Material.background: "#27ae60"
+                        color: "#ffffff"
+                        font.pixelSize: 16
+                        font.bold: true
+                    }
+
+                    MouseArea {
+                        id: calBtnArea
+                        anchors.fill: parent
                         onClicked: {
                             controller.calibrateScales(calWeightSpin.value)
                             calDialog.close()
                         }
-                    }
-
-                    Button {
-                        text: "CANCEL"
-                        Material.background: "#7f8c8d"
-                        onClicked: calDialog.close()
                     }
                 }
             }

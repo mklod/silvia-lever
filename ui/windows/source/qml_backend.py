@@ -19,6 +19,8 @@ class CoffeeController(QObject):
     pressureChanged = pyqtSignal(float)
     weightChanged = pyqtSignal(float)
     pumpPowerChanged = pyqtSignal(float)
+    valvePumpChanged = pyqtSignal(bool)         # V1: false=thermoblock, true=boiler
+    valveThermoblockChanged = pyqtSignal(bool)  # V2: false=drain, true=portafilter
     stateChanged = pyqtSignal(str)
     brewTimeChanged = pyqtSignal(str)
     errorOccurred = pyqtSignal(str)
@@ -69,6 +71,11 @@ class CoffeeController(QObject):
         self._brew_target_temp = saved_settings["brew_temp"]
         self._steam_target_temp = saved_settings["steam_temp"]
         self._scale_cal = saved_settings.get("scale_cal", 420.0)
+        # Guard: cal must be positive and in a plausible range.
+        # Negative → raw/weight polarity inverted (library bug or bad cal).
+        # <1 or >100000 → not a real cal factor for this load cell.
+        if not self._scale_cal or self._scale_cal <= 0 or self._scale_cal > 100000:
+            self._scale_cal = 420.0
         
         # Connection watchdog
         self._connection_timer = QTimer()
@@ -87,9 +94,8 @@ class CoffeeController(QObject):
             QTimer.singleShot(100, lambda: self.connectionStatusChanged.emit(True))
             QTimer.singleShot(200, lambda: self.targetTemperaturesChanged.emit(self._brew_target_temp, self._steam_target_temp))
             
-            # Start heating to brew temp immediately on startup
-            QTimer.singleShot(300, self._auto_start_heating)
-            
+            # Priming is triggered from QML when user enters brew screen
+
             # Restore scale calibration
             QTimer.singleShot(400, self._restore_scale_calibration)
         except Exception as e:
@@ -272,6 +278,8 @@ class CoffeeController(QObject):
                 pressure     = float(parts[3])
                 weight       = float(parts[4])
                 pump_percent = int(parts[5])
+                valve_tb     = bool(int(parts[6])) if len(parts) > 6 else False
+                valve_pump   = bool(int(parts[7])) if len(parts) > 7 else False
                 brew_time    = int(parts[10]) if len(parts) > 10 else 0
                 scales_tared = bool(int(parts[11])) if len(parts) > 11 else False
 
@@ -307,16 +315,28 @@ class CoffeeController(QObject):
                 self.pressureChanged.emit(pressure)
                 self.weightChanged.emit(weight)
                 self.pumpPowerChanged.emit(float(pump_percent))
+                self.valvePumpChanged.emit(valve_pump)
+                self.valveThermoblockChanged.emit(valve_tb)
                 self.scalesTaredChanged.emit(scales_tared)
 
             except Exception as e:
                 self.logger.log_error(f"Failed to parse DATA: {line} - {e}")
         elif line.startswith("NEW_CAL:"):
             # Handle NAU7802 calibration response: NEW_CAL:<factor>
+            # Valid range: positive, ≥1, ≤100000.
             try:
-                self._scale_cal = float(line[8:])
-                self.settings_manager.save_settings(self._brew_target_temp, self._steam_target_temp, self._scale_cal)
-                self.logger.log_command(f"Scale calibration updated: {self._scale_cal}")
+                new_cal = float(line[8:])
+                if new_cal <= 0 or new_cal < 1.0 or new_cal > 100000:
+                    reason = ("negative" if new_cal < 0
+                              else "too small" if abs(new_cal) < 1.0
+                              else "too large")
+                    self.logger.log_error(f"Cal result invalid ({new_cal}, {reason}) — rejected, restoring {self._scale_cal}")
+                    self.serial.send_command(f"SET_SCALE_CAL {self._scale_cal}")
+                    self.errorOccurred.emit(f"Cal failed: factor {new_cal:.3f} {reason}. Previous cal {self._scale_cal:.1f} restored.")
+                else:
+                    self._scale_cal = new_cal
+                    self.settings_manager.save_settings(self._brew_target_temp, self._steam_target_temp, self._scale_cal)
+                    self.logger.log_command(f"Scale calibration updated: {self._scale_cal}")
             except Exception as e:
                 self.logger.log_error(f"Failed to parse calibration: {line} - {e}")
         elif line.startswith("STATUS:"):
@@ -440,13 +460,6 @@ class CoffeeController(QObject):
             self._scales_settled = settled
             self.scalesSettledChanged.emit(settled)
         
-    def _auto_start_heating(self):
-        """Automatically start heating to brew temp on startup"""
-        if self.connected and self._current_state == "IDLE":
-            self.temp_controller.set_mode("BREW")
-            self.serial.send_command("START_BREW")
-            self.logger.log_command("Auto-started brew heating on startup")
-    
     @pyqtSlot()
     def primeDone(self):
         """User confirmed overflow — tell firmware to stop pump and start heating."""

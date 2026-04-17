@@ -27,7 +27,7 @@ def parse_log_file(log_path):
                 else:
                     continue
                     
-            if 'RECVIEVED:' in line:
+            if 'RECEIVED:' in line:
                 data_match = re.search(r'DATA:([0-9,\-\.]+)', line)
                 if data_match:
                     parts = data_match.group(1).split(',')

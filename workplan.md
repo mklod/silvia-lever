@@ -46,22 +46,22 @@ Strategy is confirmed viable in principle; exact safety margin depends on S9.7b 
 See Stage 9 for firmware implementation details.
 
 ### Valve / water-flow logic
-Both valves are 3-way directional control valves driven by a single pump:
+Both valves are 3-way directional control valves driven by a single pump. Both wired so the most-used state is **de-energised** (saves coil power and heat over long use):
 
-| Valve | Energised | De-energised |
-|-------|-----------|--------------|
-| **VALVE_PUMP** (VALVE1, pin 21) | pump → thermoblock OPV | pump → boiler OPV |
-| **VALVE_THERMOBLOCK** (VALVE2, pin 20) | thermoblock coil → group head | thermoblock coil → drain |
+| Valve | De-energised (default) | Energised |
+|-------|------------------------|-----------|
+| **VALVE_PUMP** (VALVE1, pin 21) | pump → thermoblock (heaviest duty) | pump → boiler (intermittent) |
+| **VALVE_THERMOBLOCK** (VALVE2, pin 20) | thermoblock → drain (relief) | thermoblock → portafilter (brewing) |
 
-**Priming thermoblock (PRIMING_BREW):** Energise VALVE_PUMP (pump→thermoblock), VALVE_THERMOBLOCK off (thermoblock→drain). Water exits at drain; user watches for overflow, then presses CONFIRM → pump stops, VALVE_PUMP de-energises → HEATING_BREW.
+**Priming thermoblock (PRIMING_BREW):** Both valves de-energised (V1 LOW = pump→thermoblock, V2 LOW = thermoblock→drain). Water flows pump→thermoblock→drain. User watches for overflow, presses CONFIRM → pump stops → HEATING_BREW.
 
-**Priming boiler (PRIMING_STEAM):** VALVE_PUMP stays de-energised (pump→boiler OPV by default). Water exits at boiler OPV; user watches for overflow, presses CONFIRM → pump stops → HEATING_STEAM.
+**Priming boiler (PRIMING_STEAM):** Energise V1 (pump→boiler), V2 stays off. Water exits at boiler OPV. User watches for overflow, presses CONFIRM → pump stops, V1 de-energises → HEATING_STEAM.
 
-**Brewing:** Energise VALVE_PUMP (pump→thermoblock) AND VALVE_THERMOBLOCK (thermoblock→group head). Pressure builds at group head; OPV limits max pressure. STOP → VALVE_THERMOBLOCK de-energises (thermoblock→drain, pressure relieves) + pump stops.
+**Brewing:** V1 stays de-energised (pump→thermoblock), energise V2 (thermoblock→portafilter). Pressure builds at portafilter manifold; OPV limits max pressure. STOP → V2 de-energises (thermoblock→drain, instant pressure relief) + pump stops.
 
-**Steaming:** No valve changes — steam is delivered via the steam wand (no relay-controlled valve).
+**Steaming:** No valve changes — steam delivered via the steam wand.
 
-**Flushing:** Energise VALVE_PUMP (pump→thermoblock), VALVE_THERMOBLOCK off (thermoblock→drain).
+**Flushing:** Both valves de-energised (V1 LOW = pump→thermoblock, V2 LOW = thermoblock→drain).
 
 ---
 
@@ -74,14 +74,14 @@ Stage 1 – Firmware hardware drivers    ██████████  100 %  
 Stage 2 – Firmware system logic        ██████████  100 %  DONE  (incl. PRIME_DONE, safety timeout)
 Stage 3 – Python backend               ██████████  100 %  DONE  (incl. primeDone() slot, mock update)
 Stage 4 – UI / QML                     ██████████  100 %  DONE  (incl. priming overlays, touch buttons)
-Stage 5 – Hardware verification        ░░░░░░░░░░    0 %  ← CURRENT FOCUS
-Stage 6A – Scale cold testing          ░░░░░░░░░░    0 %  (run alongside Stage 5)
+Stage 5 – Hardware verification        ██████████  100 %  DONE (alpha — extended testing)
+Stage 6A – Scale cold testing          ██████████  100 %  DONE (±0.1 g stability achieved)
 Stage 6B – Scale thermal drift         ░░░░░░░░░░    0 %  (requires live heating)
 Stage 7 – RPi sync                     ░░░░░░░░░░    0 %
 Stage 8 – Profile system               ░░░░░░░░░░    0 %  (deferred)
 Stage 9 – Dual-heater simultaneous op  ░░░░░░░░░░    0 %  (deferred, after Stage 5–6)
 ──────────────────────────────────────────────────
-TOTAL                                  █████░░░░░  ~57 %  (10 stages, 4 done)
+TOTAL                                  ███████░░░  ~73 %  (10 stages, 6 done — alpha)
 ```
 
 ### What is "done" means here
@@ -566,7 +566,8 @@ forget that the boiler is primed and hot.
 | File | Role |
 |------|------|
 | `firmware/silvia_lever_main/silvia_lever_main.ino` | Main firmware |
-| `firmware/silvia_lever_main/config.h` | Firmware constants, pins, `COLD_TEST_MODE` flag |
+| `firmware/silvia_lever_main/config.h` | Firmware constants, pins, `COLD_TEST_MODE`, `PUMP_ENA_PIN`, `PUMP_PWM_FULL` |
+| `firmware/PT1000_DEBUG.md` | PT1000 debug investigation log and root cause analysis |
 | `firmware/test_sketches/` | Individual component test sketches |
 | `ui/windows/source/qml_backend.py` | Python↔QML bridge (`CoffeeController`) |
 | `ui/windows/source/temperature_controller.py` | Python-side dual temp tracking |

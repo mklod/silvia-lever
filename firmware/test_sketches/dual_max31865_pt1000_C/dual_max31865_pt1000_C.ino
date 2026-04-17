@@ -31,8 +31,8 @@ void loop() {
   ratio1 /= 32768;
   ratio2 /= 32768;
 
-  Serial.print("rtd1 = "); Serial.println(thermo1.temperature(RNOMINAL, RREF));
-  Serial.print("rtd2 = "); Serial.println(thermo2.temperature(RNOMINAL, RREF));
+  Serial.print("thermoblock cs10 = "); Serial.println(thermo1.temperature(RNOMINAL, RREF));
+  Serial.print("boiler cs6 = "); Serial.println(thermo2.temperature(RNOMINAL, RREF));
 
   Serial.println();
   delay(500);

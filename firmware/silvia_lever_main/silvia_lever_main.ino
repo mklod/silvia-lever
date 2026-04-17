@@ -15,6 +15,7 @@
  *   GET_STATUS             PING
  */
 
+#include <SPI.h>
 #include <Adafruit_MAX31865.h>
 #include <ADS1115_WE.h>
 #include <Wire.h>
@@ -23,8 +24,8 @@
 
 // ─── Hardware objects ─────────────────────────────────────────────────────────
 // Two MAX31865 on shared SPI bus, each with its own CS pin
-Adafruit_MAX31865 thermoBrew  = Adafruit_MAX31865(PT1000_BREW_CS,  PT1000_MOSI, PT1000_MISO, PT1000_CLK);
-Adafruit_MAX31865 thermoSteam = Adafruit_MAX31865(PT1000_STEAM_CS, PT1000_MOSI, PT1000_MISO, PT1000_CLK);
+Adafruit_MAX31865 thermoBrew  = Adafruit_MAX31865(PT1000_BREW_CS);
+Adafruit_MAX31865 thermoSteam = Adafruit_MAX31865(PT1000_STEAM_CS);
 
 ADS1115_WE adc = ADS1115_WE(ADS1115_ADDRESS);
 NAU7802 scale;
@@ -92,31 +93,39 @@ float calibratedVZero = V_ZERO;
 
 // ─────────────────────────────────────────────────────────────────────────────
 void setup() {
-  // Safe state first
+  // ── Hard-reset SPI peripheral before anything else ─────────────────
+  // The SPI peripheral retains stale state across reflashing. When I2C
+  // libraries initialise alongside SPI, the MAX31865 can read garbage
+  // (brew 363°C) unless the bus is explicitly cleaned first.
+  // ── Step 0: Hard-reset SPI peripheral (matches working v2 test) ────
+  pinMode(PT1000_BREW_CS, OUTPUT);  digitalWrite(PT1000_BREW_CS, HIGH);
+  pinMode(PT1000_STEAM_CS, OUTPUT); digitalWrite(PT1000_STEAM_CS, HIGH);
+  pinMode(PT1000_MOSI, OUTPUT);     digitalWrite(PT1000_MOSI, LOW);
+  pinMode(PT1000_MISO, INPUT);
+  pinMode(PT1000_CLK, OUTPUT);      digitalWrite(PT1000_CLK, LOW);
+  delay(100);
+  SPI.end();
+  delay(50);
+
+  // Safe state for actuators
+  pinMode(PUMP_ENA_PIN,          OUTPUT); digitalWrite(PUMP_ENA_PIN, LOW);   // Pump gated OFF at boot
   pinMode(PUMP_PWM_PIN,          OUTPUT); analogWrite(PUMP_PWM_PIN, 0);
   pinMode(HEATER_BREW_PIN,       OUTPUT); analogWrite(HEATER_BREW_PIN, 0);
   pinMode(HEATER_STEAM_PIN,      OUTPUT); analogWrite(HEATER_STEAM_PIN, 0);
-  pinMode(VALVE_PUMP_PIN,        OUTPUT); digitalWrite(VALVE_PUMP_PIN, LOW);        // pump → boiler (safe default)
-  pinMode(VALVE_THERMOBLOCK_PIN, OUTPUT); digitalWrite(VALVE_THERMOBLOCK_PIN, LOW); // thermoblock → drain (safe default)
+  pinMode(VALVE_PUMP_PIN,        OUTPUT); digitalWrite(VALVE_PUMP_PIN, LOW);
+  pinMode(VALVE_THERMOBLOCK_PIN, OUTPUT); digitalWrite(VALVE_THERMOBLOCK_PIN, LOW);
   sys.state = STATE_IDLE;
 
   Serial.begin(SERIAL_BAUD);
 
-  // ── PT1000 sensors ───────────────────────────────────────────────────────
-  thermoBrew.begin(MAX31865_3WIRE);
-  delay(200);
-  thermoBrew.clearFault();
-
-  thermoSteam.begin(MAX31865_3WIRE);
-  delay(200);
-  thermoSteam.clearFault();
-
-  // ── I2C bus (ADS1115 + NAU7802) ──────────────────────────────────────────
+  // ── Step 1: I2C bus ─────────────────────────────────────────────────
   Wire.setSDA(I2C_SDA);
   Wire.setSCL(I2C_SCL);
   Wire.begin();
+  Wire.setClock(400000);
   delay(200);
 
+  #ifndef SCALE_ONLY_DEBUG
   // ADS1115 pressure sensor
   if (!adc.init()) {
     Serial.println("ERROR:ADS1115_INIT_FAILED");
@@ -124,14 +133,6 @@ void setup() {
     adc.setVoltageRange_mV(ADS1115_RANGE_4096);
     adc.setCompareChannels(ADS1115_COMP_0_GND);
     adc.setMeasureMode(ADS1115_SINGLE);
-  }
-
-  // NAU7802 scale
-  if (!scale.begin()) {
-    Serial.println("ERROR:NAU7802_INIT_FAILED");
-  } else {
-    scale.setCalibrationFactor(SCALE_CALIB);
-    scale.calculateZeroOffset(64);  // Average 64 readings for zero
   }
 
   // ── Pressure zero calibration ────────────────────────────────────────────
@@ -146,6 +147,27 @@ void setup() {
   calibratedVZero = sumV / 50.0;
   Serial.print("Pressure zero voltage: ");
   Serial.println(calibratedVZero, 3);
+  #endif
+
+  #ifndef SCALE_ONLY_DEBUG
+  // ── Step 2: PT1000 sensors (SPI) ─────────────────────────────────────
+  thermoBrew.begin(MAX31865_2WIRE);
+  delay(200);
+  thermoBrew.clearFault();
+
+  thermoSteam.begin(MAX31865_2WIRE);
+  delay(200);
+  thermoSteam.clearFault();
+  #endif
+
+  // ── Step 3: NAU7802 scale — match standalone test init exactly ─────
+  if (!scale.begin()) {
+    Serial.println("ERROR:NAU7802_INIT_FAILED");
+  } else {
+    scale.setSampleRate(NAU7802_SPS_320);
+    scale.calibrateAFE();
+    Serial.println("NAU7802 OK");
+  }
 
   Serial.println("READY");
 }
@@ -205,23 +227,23 @@ void processSerialCommands() {
   else if (cmd == "START_FLUSH") {
     if (sys.state == STATE_IDLE) {
       sys.state = STATE_FLUSHING;
-      setValve(VALVE_PUMP_PIN, true);         // pump → thermoblock
-      setValve(VALVE_THERMOBLOCK_PIN, false);  // thermoblock → drain (flush path)
+      setValve(VALVE_PUMP_PIN, false);         // V1 LOW = pump → thermoblock
+      setValve(VALVE_THERMOBLOCK_PIN, false);  // V2 LOW = thermoblock → drain
       Serial.println("OK:FLUSH_STARTED");
     } else {
       Serial.println("ERROR:NOT_IDLE");
     }
   }
   else if (cmd == "PRIME_DONE") {
-    // User confirmed overflow — stop pump, de-energise routing valve, advance to heating
+    // User confirmed overflow — stop pump, advance to heating
+    digitalWrite(PUMP_ENA_PIN, LOW);
     analogWrite(PUMP_PWM_PIN, 0);
     if (sys.state == STATE_PRIMING_BREW) {
-      // VALVE_THERMOBLOCK was already off (→drain); de-energise VALVE_PUMP to stop routing
-      setValve(VALVE_PUMP_PIN, false);
+      // V1 stays LOW (pump→thermoblock default) — nothing to change
       sys.state = STATE_HEATING_BREW;
       Serial.println("OK:BREW_PRIMED_HEATING");
     } else if (sys.state == STATE_PRIMING_STEAM) {
-      // VALVE_PUMP was already off (→boiler by default); just stop pump and heat
+      // V1 stays HIGH (pump→boiler) — nothing to change, just stop pump and heat
       sys.state = STATE_HEATING_STEAM;
       Serial.println("OK:STEAM_PRIMED_HEATING");
     } else {
@@ -236,8 +258,8 @@ void processSerialCommands() {
       sys.pidIntegral   = 0.0;
       sys.pidLastError  = 0.0;
       sys.pidLastTime   = millis();
-      setValve(VALVE_PUMP_PIN, true);        // pump → thermoblock
-      setValve(VALVE_THERMOBLOCK_PIN, true); // thermoblock → group head (pressure builds)
+      setValve(VALVE_PUMP_PIN, false);        // V1 LOW = pump → thermoblock
+      setValve(VALVE_THERMOBLOCK_PIN, true);  // V2 HIGH = thermoblock → portafilter (pressure builds)
       Serial.println("OK:BREWING_STARTED");
     } else {
       Serial.println("ERROR:INVALID_STATE_FOR_BREW_NOW");
@@ -295,6 +317,8 @@ void processSerialCommands() {
 void updateSensors() {
   unsigned long now = millis();
 
+  // ── SCALE_ONLY_DEBUG ─ all other sensors disabled to isolate scale noise
+  #ifndef SCALE_ONLY_DEBUG
   // ── Thermoblock PT1000 ───────────────────────────────────────────────────
   if (now - lastBrewTempRead >= TEMP_READ_INTERVAL) {
     sys.brewTempActual = thermoBrew.temperature(RNOMINAL, RREF);
@@ -322,24 +346,28 @@ void updateSensors() {
   now = millis();
   if (now - lastPressureRead >= PRESSURE_READ_INTERVAL) {
     adc.startSingleMeasurement();
-    while (adc.isBusy()) { /* non-blocking alternative: skip if isBusy(); accept one cycle delay */ }
+    while (adc.isBusy()) {}
     float v = adc.getResult_V();
     sys.pressure = mapPressure(v);
     lastPressureRead = millis();
   }
+  #endif
 
-  // ── Scale (NAU7802, non-blocking) ────────────────────────────────────────
+  // ── Scale (NAU7802) ─────────────────────────────────────────────────────
+  // getWeight(true, 32) averages 32 samples → noise reduction ~√32 = 5.7×.
+  // Single-sample noise ~±0.55g → averaged noise ~±0.1g. Blocks ~100ms at
+  // 320 SPS; read interval is 80ms so scale drives the main loop timing.
   now = millis();
   if (now - lastScaleRead >= SCALE_READ_INTERVAL) {
-    if (scale.available()) {
-      sys.weight = scale.getWeight();
-    }
+    sys.weight = scale.getWeight(true, 32);
     lastScaleRead = millis();
   }
 
+  #ifndef SCALE_ONLY_DEBUG
   // ── Potentiometer for manual pump speed ─────────────────────────────────
   int potValue = analogRead(POT_PIN);
   sys.pumpPower = potValue / 4;  // 0–1023 → 0–255
+  #endif
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -360,29 +388,34 @@ void updateSystemLogic() {
   switch (sys.state) {
 
     case STATE_PRIMING_BREW:
-      // VALVE_PUMP on → pump routes to thermoblock; VALVE_THERMOBLOCK off → thermoblock routes to drain.
-      // Water flows pump→thermoblock→drain; user watches for overflow at drain, then sends PRIME_DONE.
-      setValve(VALVE_PUMP_PIN, true);
+      // V1 LOW (de-energised default) → pump → thermoblock
+      // V2 LOW → thermoblock → drain
+      // Water flows pump→thermoblock→drain; user watches for overflow, sends PRIME_DONE.
+      setValve(VALVE_PUMP_PIN, false);
       setValve(VALVE_THERMOBLOCK_PIN, false);
-      analogWrite(PUMP_PWM_PIN, HEATER_PWM_FULL);
+      digitalWrite(PUMP_ENA_PIN, HIGH);
+      analogWrite(PUMP_PWM_PIN, PUMP_PWM_FULL);
       // Safety watchdog: abort if confirmation never arrives
       if (millis() - primeStartTime >= PRIME_SAFETY_TIMEOUT_MS) {
+        digitalWrite(PUMP_ENA_PIN, LOW);
         analogWrite(PUMP_PWM_PIN, 0);
-        setValve(VALVE_PUMP_PIN, false);
         sys.state = STATE_IDLE;
         Serial.println("ERROR:PRIME_BREW_TIMEOUT");
       }
       break;
 
     case STATE_PRIMING_STEAM:
-      // VALVE_PUMP off (de-energised) → pump routes to boiler OPV by default.
-      // Water flows pump→boiler; user watches for overflow at boiler OPV, then sends PRIME_DONE.
-      setValve(VALVE_PUMP_PIN, false);
+      // V1 HIGH (energised) → pump → boiler
+      // Water flows pump→boiler; user watches for overflow at boiler OPV, then PRIME_DONE.
+      setValve(VALVE_PUMP_PIN, true);
       setValve(VALVE_THERMOBLOCK_PIN, false);
-      analogWrite(PUMP_PWM_PIN, HEATER_PWM_FULL);
+      digitalWrite(PUMP_ENA_PIN, HIGH);
+      analogWrite(PUMP_PWM_PIN, PUMP_PWM_FULL);
       // Safety watchdog
       if (millis() - primeStartTime >= PRIME_SAFETY_TIMEOUT_MS) {
+        digitalWrite(PUMP_ENA_PIN, LOW);
         analogWrite(PUMP_PWM_PIN, 0);
+        setValve(VALVE_PUMP_PIN, false);
         sys.state = STATE_IDLE;
         Serial.println("ERROR:PRIME_STEAM_TIMEOUT");
       }
@@ -390,29 +423,36 @@ void updateSystemLogic() {
 
     case STATE_HEATING_BREW:
       controlBrewHeater();
+      digitalWrite(PUMP_ENA_PIN, LOW);
       analogWrite(PUMP_PWM_PIN, 0);
       break;
 
     case STATE_HEATING_STEAM:
       controlSteamHeater();
+      digitalWrite(PUMP_ENA_PIN, LOW);
       analogWrite(PUMP_PWM_PIN, 0);
       break;
 
     case STATE_BREWING:
       controlBrewHeater();
+      digitalWrite(PUMP_ENA_PIN, HIGH);
       analogWrite(PUMP_PWM_PIN, sys.pumpPower);
       break;
 
     case STATE_STEAMING:
       controlSteamHeater();
+      digitalWrite(PUMP_ENA_PIN, LOW);
       analogWrite(PUMP_PWM_PIN, 0);
       break;
 
     case STATE_FLUSHING:
-      // pump→thermoblock→drain (group head path, no pressure at group head)
-      setValve(VALVE_PUMP_PIN, true);
-      setValve(VALVE_THERMOBLOCK_PIN, false);
-      analogWrite(PUMP_PWM_PIN, HEATER_PWM_FULL);
+      // V1 LOW → pump → thermoblock; V2 HIGH → thermoblock → portafilter.
+      // Flushes hot water through the group head for warm-up or backflushing.
+      // On STOP/ABORT, safeOff() drops V2 LOW → portafilter pressure to drain.
+      setValve(VALVE_PUMP_PIN, false);
+      setValve(VALVE_THERMOBLOCK_PIN, true);
+      digitalWrite(PUMP_ENA_PIN, HIGH);
+      analogWrite(PUMP_PWM_PIN, PUMP_PWM_FULL);
       break;
 
     case STATE_IDLE:
@@ -497,11 +537,14 @@ void setValve(int pin, bool open) {
 // Scale operations
 // ─────────────────────────────────────────────────────────────────────────────
 void tareScales() {
+  // 32 samples at 320 SPS ≈ 100ms of averaging for a clean zero.
   scale.calculateZeroOffset(32);
+  sys.weight = 0.0f;  // reset state to match new zero immediately
   sys.scalesTared = true;
 }
 
 void calibrateScale(float knownWeight) {
+  // 64 samples at 320 SPS ≈ 200ms averaging — enough to suppress noise.
   scale.calculateCalibrationFactor(knownWeight, 64);
   float newCal = scale.getCalibrationFactor();
   Serial.print("NEW_CAL:"); Serial.println(newCal, 4);
@@ -533,11 +576,12 @@ void stopCurrentOperation() {
 }
 
 void safeOff() {
+  digitalWrite(PUMP_ENA_PIN,    LOW);   // Gate pump OFF first
   analogWrite(PUMP_PWM_PIN,     0);
   analogWrite(HEATER_BREW_PIN,  0);
   analogWrite(HEATER_STEAM_PIN, 0);
   setValve(VALVE_THERMOBLOCK_PIN, false);  // thermoblock → drain
-  setValve(VALVE_PUMP_PIN,        false);  // pump → boiler (safe default; boiler OPV provides back-pressure relief)
+  setValve(VALVE_PUMP_PIN,        false);  // V1 LOW (de-energised); pump is off so routing doesn't matter
   sys.heaterBrewOn  = false;
   sys.heaterSteamOn = false;
 }

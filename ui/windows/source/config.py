@@ -1,7 +1,7 @@
 # Configuration for Silvia Coffee Machine GUI
 
 # Serial Communication Settings
-USE_MOCK_SERIAL = False  # Set to False when connecting to real hardware
+USE_MOCK_SERIAL = False  # Set to True for desktop testing without hardware
 SERIAL_PORT = None  # Auto-detect if None, or specify like "COM3" on Windows
 SERIAL_BAUD = 115200
 

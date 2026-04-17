@@ -43,7 +43,7 @@ class DataLogger(QObject):
         self.logger.info(f"CMD_SENT: {command}")
         
     def log_response(self, response):
-        self.logger.info(f"RECVIEVED: {response}")
+        self.logger.info(f"RECEIVED: {response}")
         
     def log_error(self, error_msg):
         self.logger.error(f"ERROR: {error_msg}")

@@ -11,6 +11,10 @@ __pycache__/
 # Logs
 ui/rpi/pyqt6/logs/
 ui/windows/source/logs/
+logs/
+
+# Stray root settings.json (real one lives in ui/windows/source/)
+/settings.json
 
 # Claude Code local settings
 .claude/
