@@ -6,7 +6,7 @@ into a full named-profile system (Stage 8 in `workplan.md`) where each
 profile is a recipe of pressure / weight / time targets that the firmware
 plays back.
 
-Last updated: 2026-05-22--0036
+Last updated: 2026-05-22--0115
 
 Related: `HEATING.md` (thermoblock control), `workplan.md` Stage 8 (profile
 system), `firmware/silvia_lever_main/silvia_lever_main.ino` (state machine).
@@ -62,8 +62,9 @@ Pre-defined profile presets the user picks from on the brew screen:
 - **Ristretto** — 2.5 → 9.5 ramp, 9.5 hold tighter.
 - **Custom** — editable curve in UI.
 
-Each profile is a sequence of `(target_bar, kp, ki, exit_condition)` phases.
-Schema in §3 below.
+Each profile is a sequence of `(target_bar, slew_rate, exit_condition)`
+segments. Concrete plan + Blooming Allongé spec in §3; longer-term JSON
+schema in §4.
 
 ### Stage 2 — adaptive feedforward (longer term)
 
@@ -254,11 +255,154 @@ Sample rate ≈ 10 Hz (driven by firmware telemetry interval). A 30 s shot is
 
 ---
 
-## 3. Future: named profile system (workplan Stage 8)
+## 3. Light-roast profile plan (2026-05-22)
 
-The current auto-preinfuse is essentially a hard-coded built-in profile.
-The Stage 8 plan generalises it: pre-set named profiles the user can pick
-from, plus user-saved profiles.
+Actionable plan for Stage 1 — a light-roast-focused profile system. Research
+sources: the *Espresso Aficionados* profiling guide (PDF in `profiles/`),
+Decent's 5-light-roast-profiles blog, Gaggiuino tuning notes, and headspace
+guidance from Clive Coffee / Decent. Links at the end of this section.
+
+### 3.1 Finding — Blooming Allongé needs a profile engine
+
+Stage 0 firmware runs **one** hardcoded sequence (preinfuse → slew to 9 bar →
+hold). Blooming Allongé is a different *shape* — fill, bloom-down, percolate-up,
+decline. It cannot be a config tweak; the machine must play back a
+**multi-segment pressure trajectory**. The slew-rate setpoint engine built in
+Stage 0 *is* the substrate: a profile is just an ordered list of
+`(target, slew_rate, exit)` segments fed to the same `pumpClosedLoop()`.
+
+### 3.2 Minimal profile engine (the gating item)
+
+```
+Profile = ordered array of segments. Each segment:
+  { target_bar, slew_rate (bar/s, signed), exit_condition }
+  exit = first-to-fire of { weight_g, duration_s, pressure_reached }
+```
+
+- Built-in profiles as `const` arrays in `config.h` — no JSON parser yet
+  (that is the longer-term §4 evolution).
+- Current Stage-0 auto sequence becomes **Profile 0 "Standard 9-bar"**
+  (2 segments) — regression baseline.
+- `SET_PROFILE n` serial command + UI profile picker (extends the AUTO/MAN
+  toggle pattern).
+- `pumpClosedLoop()` PI(D) controller unchanged — it just receives the active
+  segment's slewing setpoint. ~100 lines of firmware.
+- Per-profile thermoblock temperature setpoint (light roast wants 94–96 °C).
+
+### 3.3 Blooming Allongé — spec for our hardware
+
+Translated from the Espresso Aficionados pressure-profiler recipe to our
+pressure-controlled engine. Ultra-light / nordic filter roasts, fine grind,
+~1:3.5+ ratio, thin high-clarity texture.
+
+| Seg | Phase | Target | Slew | Exit |
+|-----|-------|--------|------|------|
+| 1 | FILL | 4.5 bar | +2.0 bar/s (fast wet) | pressure ≥ 4 bar **or** 4 s |
+| 2 | BLOOM | 1.0 bar | −1.5 bar/s then hold | 10 s **or** weight ≥ 4 g |
+| 3 | PERCOLATE | 6.0 bar | +0.8 bar/s | pressure ≥ 5.5 bar **or** 5 s |
+| 4 | DECLINE | 3.5 bar | −0.12 bar/s (slow taper) | user STOP |
+
+**Key adaptation:** a needle-valve machine tapers *naturally* as the puck
+erodes. We are pressure-controlled — holding 6 bar would make the pump push
+*harder* as the puck weakens. So segment 4 actively **declines** the setpoint
+(6 → 3.5 bar over ~20 s), mimicking the natural taper of a flow-controlled
+shot. Temp 94–96 °C. Manual pot takeover still works at any point.
+
+### 3.4 Additional light-roast profiles (planned)
+
+| Profile | Shape | Use |
+|---------|-------|-----|
+| **Standard 9-bar** (Profile 0) | preinfuse → slew to 9 → hold | medium/dark; Stage-0 baseline |
+| **Gentle & Sweet** | preinfuse → flat **6 bar** hold | Decent's light-roast starter; low pressure = less channeling |
+| **Blooming Allongé** | §3.3 above | ultra-light, max clarity, filter-like |
+| **Blooming Espresso** | fill → 6-7 bar, bloom-drop to 2 bar, ramp to 9, optional taper | light–medium, more body + blending |
+| **Allongé / Turbo** | quick ramp to ~6 bar, hold, short (20-30 s), 1:3–1:5 | light coffees that channel on blooming profiles; highest clarity |
+| **Adaptive Bloom** | fill to 6-7 bar, soak (drop to ~2 bar), ramp to taste | coffees that fall apart on classic bloom |
+
+### 3.5 Portafilter / basket / headspace — Ascaso thermoblock group
+
+**General principles (light-roast focus):**
+- For light roast, *moderate* headspace is not the enemy — consensus is more
+  headspace favours light roast (clarity, higher extraction %), less favours
+  dark (body). The real risk of *excess* headspace is **fill turbulence**
+  disturbing the dry puck → channeling. Our gentle preinfuse (slow wet at
+  1 bar) mitigates turbulence — water never slams the puck.
+- **Puck screen** (~$8–12, 1.5–2 mm): sits on the puck, diffuses incoming
+  water, keeps the shower screen clean, flattens the puck. Good supplement.
+- **Dose to the basket** within 1–2 g of rating. Inspect the puck after a
+  dry lock-in: faint shower-screen witness mark = ideal; none = too much
+  headspace; deep screw imprint = overdosed.
+- A precision basket (IMS / VST 58 mm, available in varying heights) gives
+  more even extraction — worth it for light roast.
+
+**Diagnostic — the Ascaso group geometry mismatch (2026-05-22):**
+
+Observed by the user, and it points to a hardware mismatch, not technique:
+
+- Dose: **20 g in a stock Rancilio Silvia double basket**, same Silvia
+  portafilter, same beans, same grind, same scale, same puck prep.
+- On the **old Silvia group head**: a decent shower-screen witness mark —
+  puck nearly touching the screen screw. Headspace was correct.
+- On the **new Ascaso thermoblock group**: *massive* headspace, **no witness
+  mark at all**. Plus horrid channeling (bottomless-portafilter evidence).
+- The **only variable changed is the group head.** Beans/grind/scale/prep
+  are static. Grind sanity-checks out (30–40 s, 1:2 ratio on a normal shot).
+
+**Interpretation:** 20 g is already an over-dose for a stock Silvia double
+basket (~14–18 g rated) — the puck should sit *tall*. That it still leaves
+massive headspace in the Ascaso group means the Ascaso group's shower screen
+is set much higher above the portafilter-seating plane than the Silvia
+group's. The Silvia portafilter + Silvia basket were geometry-matched to the
+Silvia group; moving them to the Ascaso group exposes a **vertical geometry
+mismatch** (screen-to-bayonet distance is larger on the Ascaso). And the
+resulting massive headspace is a leading cause of the channeling — water
+pools in the void and hits the puck unevenly when pressure builds.
+
+**Fix path (in order):**
+1. **Quantify it.** Tamp a puck, place a coin / marker on top, lock into the
+   Ascaso group, remove, inspect — measures the gap precisely.
+2. **Use an Ascaso-matched basket.** The Ascaso group was designed around
+   Ascaso baskets — their **18 g "double tall" basket** is the obvious
+   candidate; it seats the puck higher. Or measure the gap and source a
+   precision basket (IMS/VST) of the matching depth.
+3. **If a taller basket alone doesn't close it**, the Silvia *portafilter
+   body* basket-seat depth may also differ — switch to an Ascaso portafilter
+   body + basket as a matched set.
+4. **Puck screen** as a supplement once headspace is in a normal range — it
+   bridges only 1.5–3 mm, so it is not a fix for *massive* headspace alone.
+5. Re-dial dose to the chosen basket once geometry is correct.
+
+Sanity items worth doing regardless: install a puck screen, and re-verify the
+scale against a known reference before grinding (cheap to rule out). But the
+evidence — single variable changed, channeling appeared with it — strongly
+implicates the basket/portafilter ↔ Ascaso-group geometry mismatch.
+
+### 3.6 Build order
+
+1. **Profile engine** — segment-table playback, `SET_PROFILE`, UI picker.
+2. **Profile 0** = current Standard 9-bar re-expressed as segments
+   (regression check vs Stage 0 behaviour).
+3. **Blooming Allongé** — segment table §3.3.
+4. Layer in Gentle & Sweet, Blooming Espresso, Allongé/Turbo, Adaptive Bloom.
+5. Per-profile temperature setpoint.
+6. `brew_recorder` already logs everything — compare profiles from JSON.
+
+### 3.7 Sources
+
+- *Espresso Profiling* — Espresso Aficionados: <https://espressoaf.com/guides/profiling.html>
+  (full PDF archived in `profiles/`)
+- Decent — 5 light-roast profiles: <https://decentespresso.com/blog/5_espresso_profiles_for_light_roasted_coffee_beans>
+- Papel Espresso — Gaggiuino roast-level tuning: <https://www.papelespresso.com/tuning-your-gaggiuino-for-different-roast-levels-and-bean-densities/>
+- Clive Coffee — espresso headspace: <https://clivecoffee.com/blogs/learn/headspace-espressos-invisible-enemy>
+- Decent — headspace reduction kit: <https://decentespresso.com/blog/new_headspace_reduction_kit_with_surprising_refractometer_results>
+
+---
+
+## 4. Longer-term: JSON profile system (workplan Stage 8)
+
+The §3 minimal engine uses `const` segment arrays compiled into firmware.
+The longer-term evolution generalises it: JSON-defined profiles the user can
+pick from and save, with a UI editor.
 
 ### Profile schema (proposed)
 
@@ -365,7 +509,7 @@ brews are reproducible.
 
 ---
 
-## 4. File reference
+## 5. File reference
 
 | File | Role |
 |------|------|
@@ -377,8 +521,12 @@ brews are reproducible.
 
 ---
 
-## 5. Revision log
+## 6. Revision log
 
+- **2026-05-22 (00:36)**: §3 added — light-roast profile plan, minimal
+  profile-engine design, Blooming Allongé spec for our hardware, and the
+  Ascaso-group headspace/basket mismatch diagnostic. Old JSON-profile-system
+  section renumbered to §4.
 - **2026-04-23 (23:28)**: Added HOLD phase (closed-loop 9 bar for 3 s)
   between RAMP and EXTRACT. Lets pump speed settle to steady-state pressure
   before manual takeover. `brewPhase` enum is now 0-3 (added `HOLD = 2`,
