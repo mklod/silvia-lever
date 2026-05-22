@@ -138,8 +138,8 @@ ApplicationWindow {
         initialItem: homeScreen
     }
 
-    // Persistent debug row — bottom, all live sensor values + valve states.
-    // Visible on all screens (window-level), high z so it floats above content.
+    // Persistent debug row — bottom: heat, brew mode, profile, scale,
+    // pressure, pump. Visible on all screens (window-level), high z.
     // Each field is fixed-width with right-justified numbers so values don't
     // shift position when digit count or sign changes ("0.00" → "-0.10").
     RowLayout {
@@ -245,22 +245,10 @@ ApplicationWindow {
                 return "PUMP: " + p + "%"
             }
         }
-        Text {
-            Layout.fillWidth: true
-            horizontalAlignment: Text.AlignHCenter
-            color: "#ffffff"
-            font.pixelSize: 14
-            font.family: "Consolas"
-            text: "V1: " + (window.valvePumpEnergised ? "boiler     " : "thermoblock")
-        }
-        Text {
-            Layout.fillWidth: true
-            horizontalAlignment: Text.AlignHCenter
-            color: "#ffffff"
-            font.pixelSize: 14
-            font.family: "Consolas"
-            text: "V2: " + (window.valveThermoblockEnergised ? "portafilter" : "drain      ")
-        }
+        // V1/V2 valve-state cells removed 2026-05-22 — water flow + valve
+        // switching verified working; the debug row now shows only the
+        // values that still need watching (heat, brew mode, profile,
+        // scale, pressure, pump).
     }
 
     // Connection Status — top-right of home screen, plain white text.

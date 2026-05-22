@@ -10,6 +10,53 @@
 > - Profile system (Stage 8) after a few weeks of real-world use
 > - Autostart silvia on RPi boot (systemd user unit or labwc-pi autostart) so no tap needed at power-on
 
+## Build 2026-05-22--1319 — light-roast profiles + debug-row cleanup
+
+### Firmware — three new profiles (5 total)
+
+- **Blooming Allongé** (4 segments) — for ultra-light / nordic filter roasts,
+  the profile for surfacing fruit/floral notes. Fast fill to 4.5 bar → bloom
+  (soak, drop to 1 bar) → percolate to 6 bar → slow declining taper 6→3.5 bar.
+  The decline mimics a flow-controlled shot's natural taper on our pressure
+  rig. PROFILES.md §3.3.
+- **Blooming Espresso** (3 seg) — light-to-medium: fill 6.5 bar → bloom-drop
+  to 2 bar → ramp to 9 bar and hold. More body than the allongé.
+- **Allongé** (2 seg) — simple light-roast: gentle preinfuse → flat 5 bar
+  hold. Coarser grind, long ratio; the fallback when blooming profiles
+  channel.
+- Profile picker (`PROF:` button) cycles all 5: Standard 9-bar, Gentle &
+  Sweet, Blooming Allongé, Blooming Espresso, Allongé.
+
+### UI — debug-row cleanup
+
+- Removed the V1/V2 valve-state cells. Water flow + valve switching is
+  verified working; the debug row now shows only what still needs watching:
+  heat, brew mode, profile, scale, pressure, pump.
+
+### Gentle & Sweet — first brew-test result (build 0139)
+
+Profile engine + Gentle & Sweet verified on a real shot: preinfuse exited on
+the 10 s time cap, clean ramp, **dead-flat 6 bar hold for 49 s, zero
+overshoot**. Engine confirmed working. The shot ran slow (~0.59 g/s, 78 s)
+— that's grind-vs-pressure, not the profile: a 6-bar profile needs a coarser
+grind than a 9-bar one. Channeling visibly improved on the bottomless PF.
+
+### Verified
+- Compiles clean (Teensy 4.0, 52184 B flash). Flashed; `GET_PROFILES`
+  returns all 5; silvia picked up the list.
+
+> [!warning] Testing Checklist
+> - [ ] Blooming Allongé — pull on an ultra-light roast (fine grind), confirm fill → bloom → percolate → declining taper, check for fruit clarity
+>   - Notes:
+> - [ ] Blooming Espresso — confirm bloom-drop to 2 bar then ramp to 9
+>   - Notes:
+> - [ ] Allongé — flat 5 bar, coarser grind, long ratio
+>   - Notes:
+> - [ ] `PROF:` button cycles all 5 profiles, names display
+>   - Notes:
+> - [ ] Debug row no longer shows V1/V2
+>   - Notes:
+
 ## Build 2026-05-22--0139 — Stage 1: brew profile engine + Gentle & Sweet
 
 First step of the light-roast profile plan (PROFILES.md §3).

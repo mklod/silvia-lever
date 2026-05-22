@@ -1,4 +1,4 @@
-// Last modified: 2026-05-22--0129
+// Last modified: 2026-05-22--1317
 /*
  * Silvia Lever Coffee Machine Controller
  * Hardware revision: dual PT1000 (MAX31865), dual SSR heaters,
@@ -95,9 +95,42 @@ const BrewSegment SEG_GENTLE_SWEET[] = {
   { 6.0f, BREW_SLEW_RATE, GAINS_BREW, 0.0f, 0, 0.0f },
 };
 
+// Profile 2 — Blooming Allongé (PROFILES.md §3.3). For ultra-light / nordic
+// filter roasts — max flavour clarity, surfaces fruit/floral notes. Fast
+// fill → bloom (soak at 1 bar) → percolate to 6 bar → slow declining taper
+// (mimics the natural taper of a flow-controlled shot on our pressure rig).
+// Fields: { targetBar, slewRate, gains, exitWeightG, exitDurationMs, exitPressureBar }
+const BrewSegment SEG_BLOOMING_ALLONGE[] = {
+  { 4.5f, 2.0f,  GAINS_BREW,      0.0f, 4000,  4.0f },  // FILL
+  { 1.0f, 1.5f,  GAINS_PREINFUSE, 4.0f, 10000, 0.0f },  // BLOOM / soak
+  { 6.0f, 0.8f,  GAINS_BREW,      0.0f, 5000,  5.5f },  // PERCOLATE
+  { 3.5f, 0.12f, GAINS_BREW,      0.0f, 0,     0.0f },  // DECLINE → STOP
+};
+
+// Profile 3 — Blooming Espresso (PROFILES.md §3.4). Light-to-medium: fill,
+// bloom-drop to 2 bar, ramp to 9 bar and hold. More body/blending than the
+// allongé while keeping a bloom for clarity.
+const BrewSegment SEG_BLOOMING_ESPRESSO[] = {
+  { 6.5f, 2.0f, GAINS_BREW,      0.0f, 4000, 6.0f },    // FILL
+  { 2.0f, 1.5f, GAINS_PREINFUSE, 4.0f, 8000, 0.0f },    // BLOOM
+  { 9.0f, BREW_SLEW_RATE, GAINS_BREW, 0.0f, 0, 0.0f },  // RAMP → 9 → hold
+};
+
+// Profile 4 — Allongé (PROFILES.md §3.4). Simple light-roast profile: gentle
+// preinfuse then a flat ~5 bar hold. Coarser grind, longer ratio (1:3-1:5),
+// high clarity. The fallback when blooming profiles channel.
+const BrewSegment SEG_ALLONGE[] = {
+  { PREINFUSE_TARGET_BAR, 2.0f, GAINS_PREINFUSE,
+    PREINFUSE_END_WEIGHT_G, PREINFUSE_MAX_MS, 0.0f },
+  { 5.0f, BREW_SLEW_RATE, GAINS_BREW, 0.0f, 0, 0.0f },
+};
+
 const BrewProfile BREW_PROFILES[] = {
-  { "Standard 9-bar", 2, SEG_STANDARD },
-  { "Gentle & Sweet", 2, SEG_GENTLE_SWEET },
+  { "Standard 9-bar",    2, SEG_STANDARD },
+  { "Gentle & Sweet",    2, SEG_GENTLE_SWEET },
+  { "Blooming Allonge",  4, SEG_BLOOMING_ALLONGE },
+  { "Blooming Espresso", 3, SEG_BLOOMING_ESPRESSO },
+  { "Allonge",           2, SEG_ALLONGE },
 };
 const uint8_t N_BREW_PROFILES = sizeof(BREW_PROFILES) / sizeof(BREW_PROFILES[0]);
 

@@ -3,6 +3,14 @@
 ## Current milestone
 **Alpha — thermoblock PID tuned.** First successful autotune complete (Kp/Ki/Kd = 46.94/0.516/3155.89, TL rule). Derivative-on-measurement + low-pass filter added. Boiler still disabled for single-heater focus; S9.7b measured (1.51 A avg maintenance) → Stage 9 concurrent heating unblocked on measurement side, pending implementation.
 
+## Session 2026-05-22 (13:19) — light-roast profiles + debug-row cleanup
+- Added 3 profiles (5 total): Blooming Allongé (4-seg: fill→bloom→percolate→declining taper — the fruity-light-roast profile), Blooming Espresso (3-seg), Allongé (2-seg). All from PROFILES.md §3.3/§3.4. Compiled, flashed, GET_PROFILES confirms all 5.
+- Debug row: removed V1/V2 valve cells (water flow + valves verified working). Row now: heat, brew mode, profile, scale, pressure, pump.
+- Gentle & Sweet first brew-test (build 0139): profile engine works — dead-flat 6 bar hold 49 s, zero overshoot. Shot ran slow (~0.59 g/s) — grind too fine for a 6-bar profile (lower pressure needs coarser grind), NOT a profile fault. Channeling visibly improved on bottomless PF.
+- Portafilter debug: headspace/channeling root cause = Ascaso group is an E61-*variant*; Silvia PF is Rancilio-pattern → seats wrong. User ordered a couple aftermarket PFs to test. Gasket confirmed preinstalled (non-issue).
+- Flash gotcha recurred: backgrounded teensy_loader_cli got SIGHUP'd when the SSH session closed → Teensy left in HalfKay. Re-ran loader directly (already in bootloader) → flashed. Going forward: nohup the loader, or run it foreground.
+- Next: brew-test the new profiles, especially Blooming Allongé on a very light roast.
+
 ## Session 2026-05-22 (01:39) — Stage 1: brew profile engine + Gentle & Sweet
 - Built the segment-table profile engine (PROFILES.md §3.2). A profile = ordered list of `(targetBar, slewRate, gains, exit)` segments; `runBrewSegmentEngine()` plays them through the Stage-0 slew-rate controller. The hardcoded preinfuse/ramp/hold state machine is gone.
 - Two profiles: Profile 0 "Standard 9-bar" (faithful Stage-0 re-expression, regression baseline), Profile 1 "Gentle & Sweet" (light-roast starter — flat 6 bar hold).
