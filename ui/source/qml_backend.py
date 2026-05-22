@@ -37,6 +37,8 @@ class CoffeeController(QObject):
     targetTemperaturesChanged = pyqtSignal(float, float)
     heatersEnabledChanged = pyqtSignal(bool)
     autoBrewModeChanged = pyqtSignal(bool)
+    profilesChanged = pyqtSignal(list)         # full list of profile names
+    activeProfileChanged = pyqtSignal(int, str)  # (index, name)
     autotuneLineReceived = pyqtSignal(str)  # raw firmware line: AUTOTUNE:... or AUTOTUNE_RESULT:...
     
     def __init__(self, parent=None):
@@ -59,6 +61,8 @@ class CoffeeController(QObject):
         self._heaters_enabled = False  # mirrors firmware; UI-controlled master switch
         self._brew_phase = "extract"   # mirrors firmware sub-state during BREWING
         self._auto_brew_mode = False   # mirrors firmware autoBrewMode flag
+        self._profiles = []            # brew-profile names, learned from firmware
+        self._profile_index = 0        # active profile index
         
         # Connect safety signals
         self.safety.emergencyStop.connect(self._emergency_stop)
@@ -123,6 +127,8 @@ class CoffeeController(QObject):
             QTimer.singleShot(400, self._restore_scale_calibration)
             # Restore persisted PID gains (if any), after firmware's had time to boot
             QTimer.singleShot(600, self._restore_pid_gains)
+            # Ask firmware for its brew-profile list (populates the UI picker)
+            QTimer.singleShot(800, self._request_profiles)
         except Exception as e:
             self.logger.log_error(f"Failed to start serial: {e}")
             self.connected = False
@@ -437,6 +443,32 @@ class CoffeeController(QObject):
                     self.logger.log_command(f"Autotune applied + persisted: Kp={kp} Ki={ki} Kd={kd}")
                 except Exception as e:
                     self.logger.log_error(f"Failed to parse AUTOTUNE_RESULT: {line} - {e}")
+        elif line.startswith("OK:PROFILE_COUNT:"):
+            # End of the GET_PROFILES listing — publish the list, and the
+            # currently-active profile name so the UI picker shows something.
+            self.profilesChanged.emit(list(self._profiles))
+            if 0 <= self._profile_index < len(self._profiles):
+                self.activeProfileChanged.emit(
+                    self._profile_index, self._profiles[self._profile_index])
+        elif line.startswith("OK:PROFILE:"):
+            # SET_PROFILE confirmation: OK:PROFILE:<idx>:<name>
+            try:
+                parts = line.split(":", 3)
+                idx, name = int(parts[2]), parts[3]
+                self._profile_index = idx
+                self.activeProfileChanged.emit(idx, name)
+            except Exception as e:
+                self.logger.log_error(f"bad OK:PROFILE line: {line} - {e}")
+        elif line.startswith("PROFILE:"):
+            # GET_PROFILES listing line: PROFILE:<idx>:<name>
+            try:
+                _, idx_s, name = line.split(":", 2)
+                idx = int(idx_s)
+                while len(self._profiles) <= idx:
+                    self._profiles.append("")
+                self._profiles[idx] = name
+            except Exception as e:
+                self.logger.log_error(f"bad PROFILE line: {line} - {e}")
         elif line.startswith("READY") or line.startswith("PONG"):
             self.logger.log_command(f"Received: {line}")
                     
@@ -567,6 +599,31 @@ class CoffeeController(QObject):
             self.logger.log_command(f"SET_HEATERS_ENABLE {1 if enabled else 0}")
         else:
             self.errorOccurred.emit("Cannot toggle heaters - not connected")
+
+    def _request_profiles(self):
+        """Ask firmware to list its brew profiles (populates the UI picker)."""
+        if self.connected:
+            self._profiles = []
+            self.serial.send_command("GET_PROFILES")
+
+    @pyqtSlot(int)
+    def setProfile(self, index):
+        """Select the active brew profile by index. Firmware echoes
+        OK:PROFILE:<idx>:<name>, which updates the UI via activeProfileChanged."""
+        if self.connected:
+            self.serial.send_command(f"SET_PROFILE {index}")
+            self.logger.log_command(f"SET_PROFILE {index}")
+        else:
+            self.errorOccurred.emit("Cannot set profile - not connected")
+
+    @pyqtSlot()
+    def cycleProfile(self):
+        """Advance to the next brew profile, wrapping. No-op until the
+        profile list has been received from firmware."""
+        if not self._profiles:
+            return
+        nxt = (self._profile_index + 1) % len(self._profiles)
+        self.setProfile(nxt)
 
     @pyqtSlot(bool)
     def setAutoBrewMode(self, auto):

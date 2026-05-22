@@ -50,6 +50,8 @@ ApplicationWindow {
     property real steamTargetTemp: 130.0
     property bool heatersEnabled: false
     property bool autoBrewMode: false   // mirrors firmware autoBrewMode
+    property string profileName: "—"    // active brew profile name
+    property int profileIndex: 0        // active brew profile index
     // Priming overlay visibility — driven by the home-screen button tap.
     // Decoupled from firmware state so the overlay can be shown BEFORE
     // the user taps START and hangs around until they explicitly dismiss.
@@ -123,6 +125,11 @@ ApplicationWindow {
         onAutoBrewModeChanged: function(auto) {
             window.autoBrewMode = auto
         }
+
+        onActiveProfileChanged: function(index, name) {
+            window.profileIndex = index
+            window.profileName = name
+        }
     }
     
     StackView {
@@ -168,8 +175,8 @@ ApplicationWindow {
                 onClicked: controller.setHeatersEnabled(!window.heatersEnabled)
             }
         }
-        // AUTO/MANUAL brew mode toggle. AUTO = firmware runs the preinfuse →
-        // ramp → hold sequence with manual takeover via pot. MANUAL = pot
+        // AUTO/MANUAL brew mode toggle. AUTO = firmware runs the active
+        // profile (segment engine) with manual takeover via pot. MANUAL = pot
         // drives PWM directly from t=0 of the brew. Maps to SET_AUTO_MODE.
         Text {
             Layout.fillWidth: true
@@ -186,6 +193,24 @@ ApplicationWindow {
                 height: 64
                 enabled: connectionStatus.connected
                 onClicked: controller.setAutoBrewMode(!window.autoBrewMode)
+            }
+        }
+        // Brew profile picker — tap cycles to the next profile. Only
+        // meaningful when BREW is AUTO. Maps to SET_PROFILE / cycleProfile.
+        Text {
+            Layout.fillWidth: true
+            horizontalAlignment: Text.AlignHCenter
+            color: window.autoBrewMode ? "#3498db" : "#555555"
+            font.pixelSize: 14
+            font.family: "Consolas"
+            text: "PROF: " + window.profileName
+            MouseArea {
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.verticalCenter: parent.verticalCenter
+                height: 64
+                enabled: connectionStatus.connected
+                onClicked: controller.cycleProfile()
             }
         }
         Text {

@@ -1,4 +1,4 @@
-// Last modified: 2026-05-01--2320
+// Last modified: 2026-05-22--0129
 /*
  * Silvia Lever Coffee Machine Controller
  * Hardware revision: dual PT1000 (MAX31865), dual SSR heaters,
@@ -43,14 +43,63 @@ enum SystemState {
   STATE_FLUSHING
 };
 
-// Sub-states inside STATE_BREWING — auto pre-infuse → ramp → manual extract.
-// See config.h for the constants that govern transitions.
+// Telemetry sub-state inside STATE_BREWING. With the profile engine these
+// are derived from the active segment (see runBrewSegmentEngine): segment 0
+// reports PREINFUSE, a slewing setpoint reports RAMP, a settled setpoint
+// reports HOLD, manual pot control reports EXTRACT.
 enum BrewPhase {
   BREW_PHASE_PREINFUSE = 0,
   BREW_PHASE_RAMP      = 1,
-  BREW_PHASE_HOLD      = 2,    // closed-loop 9 bar, indefinite, until user STOP
-  BREW_PHASE_EXTRACT   = 3     // pot-controlled manual override (not in auto sequence)
+  BREW_PHASE_HOLD      = 2,
+  BREW_PHASE_EXTRACT   = 3     // pot-controlled manual (auto-off, or takeover)
 };
+
+// ─── Brew profile engine (Stage 1) ────────────────────────────────────────────
+// A profile is an ordered list of segments. Each segment slews the pressure
+// setpoint toward targetBar at slewRate, runs the shared PI(D) controller with
+// its gain set, and advances to the next segment when any non-zero exit
+// criterion fires (first to trigger wins). The final segment ignores its exit
+// criteria and runs until the user STOPs. See PROFILES.md §3.
+enum PumpGains { GAINS_PREINFUSE = 0, GAINS_BREW = 1 };
+
+struct BrewSegment {
+  float     targetBar;        // pressure setpoint this segment slews toward
+  float     slewRate;         // bar/sec (magnitude; direction is auto)
+  PumpGains gains;            // which PI(D) gain set pumpClosedLoop uses
+  float     exitWeightG;      // advance when sys.weight   >= this  (0 = ignore)
+  uint32_t  exitDurationMs;   // advance when seg elapsed  >= this  (0 = ignore)
+  float     exitPressureBar;  // advance when sys.pressure >= this  (0 = ignore)
+};
+
+struct BrewProfile {
+  const char*        name;
+  uint8_t            nSegments;
+  const BrewSegment* segments;
+};
+
+// Profile 0 — Standard 9-bar. Faithful re-expression of the Stage-0 auto
+// sequence: gentle 1 bar preinfuse (exit on 1 g OR 10 s), then slew to 9 bar
+// and hold until STOP.
+const BrewSegment SEG_STANDARD[] = {
+  { PREINFUSE_TARGET_BAR, 2.0f, GAINS_PREINFUSE,
+    PREINFUSE_END_WEIGHT_G, PREINFUSE_MAX_MS, 0.0f },
+  { BREW_TARGET_BAR, BREW_SLEW_RATE, GAINS_BREW, 0.0f, 0, 0.0f },
+};
+
+// Profile 1 — Gentle & Sweet. Light-roast starter (PROFILES.md §3.4): same
+// gentle preinfuse, then a flat 6 bar hold. Lower pressure = less channeling
+// on light roasts, which have weaker puck integrity.
+const BrewSegment SEG_GENTLE_SWEET[] = {
+  { PREINFUSE_TARGET_BAR, 2.0f, GAINS_PREINFUSE,
+    PREINFUSE_END_WEIGHT_G, PREINFUSE_MAX_MS, 0.0f },
+  { 6.0f, BREW_SLEW_RATE, GAINS_BREW, 0.0f, 0, 0.0f },
+};
+
+const BrewProfile BREW_PROFILES[] = {
+  { "Standard 9-bar", 2, SEG_STANDARD },
+  { "Gentle & Sweet", 2, SEG_GENTLE_SWEET },
+};
+const uint8_t N_BREW_PROFILES = sizeof(BREW_PROFILES) / sizeof(BREW_PROFILES[0]);
 
 struct SystemData {
   SystemState state = STATE_IDLE;
@@ -98,11 +147,14 @@ struct SystemData {
   // In EXTRACT phase, PWM = constrain(potValue + handoverOffset, 0, FULL).
   int          potAtBrewStart = 0;
   int          handoverOffset = 0;
-  // Auto vs manual brew mode. true = full PREINFUSE → RAMP → HOLD auto
-  // sequence with manual-takeover by pot rotation. false = brew enters
-  // EXTRACT immediately, pot drives PWM directly from t=0. Toggled at
-  // runtime via the SET_AUTO_MODE serial command.
+  // Auto vs manual brew mode. true = run the active profile (segment engine)
+  // with manual-takeover by pot rotation. false = brew enters EXTRACT
+  // immediately, pot drives PWM directly from t=0. Toggled via SET_AUTO_MODE.
   bool         autoBrewMode  = false;   // default MANUAL — see SET_AUTO_MODE
+  // Brew profile engine state.
+  uint8_t       activeProfile  = 0;   // index into BREW_PROFILES[]
+  uint8_t       segmentIndex   = 0;   // current segment within the profile
+  unsigned long segmentStartMs = 0;   // millis() at current segment entry
 
   // Scale state
   bool scalesTared = false;
@@ -355,19 +407,20 @@ void processSerialCommands() {
       sys.pumpPiLastMs   = millis();
       sys.pumpDLastMeas  = 0.0f;
       sys.pumpDFiltered  = 0.0f;
-      sys.brewSetpoint   = PREINFUSE_TARGET_BAR;
+      sys.brewSetpoint   = 0.0f;           // segment 0 slews it up from 0
       sys.brewSlewLastMs = millis();
+      // Profile engine: start at segment 0 of the active profile.
+      sys.segmentIndex   = 0;
+      sys.segmentStartMs = millis();
       // Snapshot pot position so manual takeover detection can compare
       // against it. handoverOffset stays at 0 until takeover fires.
       sys.potAtBrewStart = sys.pumpPower;
       sys.handoverOffset = 0;
       setValve(VALVE_PUMP_PIN, false);        // V1 LOW = pump → thermoblock
       setValve(VALVE_THERMOBLOCK_PIN, true);  // V2 HIGH = thermoblock → portafilter (pressure builds)
-      // Stage 0: PREINFUSE → RAMP (pressure-target sweep) → HOLD (closed-loop
-      // forever until user STOP) when autoBrewMode is true. Manual takeover
-      // via pot rotation switches to EXTRACT mid-brew. When autoBrewMode is
-      // false, brew enters EXTRACT immediately = full manual / pot control
-      // from t=0. Toggle at runtime via SET_AUTO_MODE.
+      // autoBrewMode true → run the active profile via the segment engine
+      // (PROFILES.md §3). false → enter EXTRACT immediately = full manual
+      // pot control from t=0. Manual pot-rotation takeover works mid-brew.
       sys.brewPhase = sys.autoBrewMode ? BREW_PHASE_PREINFUSE
                                         : BREW_PHASE_EXTRACT;
       Serial.println("OK:BREWING_STARTED");
@@ -496,12 +549,33 @@ void processSerialCommands() {
     Serial.print("OK:HEATERS_"); Serial.println(sys.heatersEnabled ? "ENABLED" : "DISABLED");
   }
   else if (cmd.startsWith("SET_AUTO_MODE ")) {
-    // SET_AUTO_MODE 1 = full PREINFUSE→RAMP→HOLD sequence on next BEGIN_BREW.
-    // SET_AUTO_MODE 0 = brew enters EXTRACT immediately (full manual / pot).
-    // Takes effect on the NEXT brew (mid-brew toggling not supported).
+    // SET_AUTO_MODE 1 = run the active profile (segment engine) on next
+    // BEGIN_BREW. SET_AUTO_MODE 0 = brew enters EXTRACT immediately (full
+    // manual / pot). Takes effect on the NEXT brew.
     int v = cmd.substring(14).toInt();
     sys.autoBrewMode = (v != 0);
     Serial.print("OK:AUTO_MODE_"); Serial.println(sys.autoBrewMode ? "ON" : "OFF");
+  }
+  else if (cmd.startsWith("SET_PROFILE ")) {
+    // SET_PROFILE <n> — select the active brew profile by index. Takes
+    // effect on the next BEGIN_BREW. Reply carries the name so the UI can
+    // display it without hardcoding the profile list.
+    int n = cmd.substring(12).toInt();
+    if (n >= 0 && n < N_BREW_PROFILES) {
+      sys.activeProfile = (uint8_t)n;
+      Serial.print("OK:PROFILE:"); Serial.print(n);
+      Serial.print(":"); Serial.println(BREW_PROFILES[n].name);
+    } else {
+      Serial.println("ERROR:BAD_PROFILE_INDEX");
+    }
+  }
+  else if (cmd == "GET_PROFILES") {
+    // List all profiles so the UI can build its picker. One line per profile.
+    for (uint8_t i = 0; i < N_BREW_PROFILES; i++) {
+      Serial.print("PROFILE:"); Serial.print(i);
+      Serial.print(":"); Serial.println(BREW_PROFILES[i].name);
+    }
+    Serial.print("OK:PROFILE_COUNT:"); Serial.println(N_BREW_PROFILES);
   }
   else if (cmd.length() > 0) {
     Serial.print("ERROR:UNKNOWN_COMMAND:\"");
@@ -652,82 +726,20 @@ void updateSystemLogic() {
       break;
 
     case STATE_BREWING:
-      // Stage 0 (slew-rate-limited single-loop):
-      //   PREINFUSE: PI to 2.5 bar, exit on weight.
-      //   POST-PREINFUSE: ONE PI(D) loop tracks a setpoint that slowly slews
-      //   from PREINFUSE_TARGET_BAR up to BREW_TARGET_BAR at BREW_SLEW_RATE,
-      //   then holds. RAMP vs HOLD is telemetry-only — controller behavior
-      //   is identical. Integrator naturally adapts to whatever PWM the puck
-      //   needs. Slow setpoint avoids dead-time-induced overshoot.
+      // Stage 1: the brew profile engine. autoBrewMode runs the active
+      // profile's segment list (runBrewSegmentEngine). EXTRACT = manual pot
+      // control — entered at brew start when autoBrewMode is off, or via a
+      // mid-brew pot-rotation takeover. See PROFILES.md §3.
       digitalWrite(PUMP_ENA_PIN, HIGH);
-      switch (sys.brewPhase) {
-        case BREW_PHASE_PREINFUSE: {
-          int pwm = pumpClosedLoop(PREINFUSE_TARGET_BAR, PREINFUSE_BASE_PWM,
-                                   PREINFUSE_KP, PREINFUSE_KI, PREINFUSE_KD,
-                                   PREINFUSE_MIN_PWM, PREINFUSE_MAX_PWM);
-          analogWrite(PUMP_PWM_PIN, pwm);
-          // Exit on first of: enough weight in cup OR elapsed > PREINFUSE_MAX_MS.
-          // Time cap protects against a choked puck that never releases the
-          // 1 g threshold — keeps total brew time bounded.
-          unsigned long preinfuseElapsed = millis() - sys.brewTimer;
-          if (sys.weight >= PREINFUSE_END_WEIGHT_G
-              || preinfuseElapsed >= PREINFUSE_MAX_MS) {
-            sys.brewSetpoint   = PREINFUSE_TARGET_BAR;  // slew starts here
-            sys.brewSlewLastMs = millis();
-            sys.brewPhase      = BREW_PHASE_RAMP;
-            Serial.println("INFO:BREW_RAMP_START");
-          }
-          break;
-        }
-        case BREW_PHASE_RAMP:
-        case BREW_PHASE_HOLD: {
-          // Manual takeover: if the pot has been rotated past the threshold
-          // since brew start, capture a bumpless PWM offset and hand control
-          // to the pot. Threshold prevents jitter from triggering accidentally.
-          if (abs(sys.pumpPower - sys.potAtBrewStart) > MANUAL_TAKEOVER_DELTA) {
-            sys.handoverOffset = sys.lastPumpPwm - sys.pumpPower;
-            sys.brewPhase = BREW_PHASE_EXTRACT;
-            Serial.println("INFO:BREW_MANUAL_TAKEOVER");
-            // Fall through to EXTRACT case to write PWM this iteration.
-            int pwm = constrain(sys.pumpPower + sys.handoverOffset,
-                                0, PUMP_PWM_FULL);
-            analogWrite(PUMP_PWM_PIN, pwm);
-            break;
-          }
-          // Slew the setpoint up at BREW_SLEW_RATE bar/sec until it reaches
-          // BREW_TARGET_BAR. Once there, the phase flips to HOLD (telemetry)
-          // but the controller keeps running the same loop.
-          unsigned long now = millis();
-          float dtSlew = (now - sys.brewSlewLastMs) * 0.001f;
-          sys.brewSlewLastMs = now;
-          if (dtSlew > 0.0f && dtSlew < 0.5f
-              && sys.brewSetpoint < BREW_TARGET_BAR) {
-            sys.brewSetpoint += BREW_SLEW_RATE * dtSlew;
-            if (sys.brewSetpoint >= BREW_TARGET_BAR) {
-              sys.brewSetpoint = BREW_TARGET_BAR;
-              if (sys.brewPhase == BREW_PHASE_RAMP) {
-                sys.brewPhase = BREW_PHASE_HOLD;
-                Serial.println("INFO:BREW_HOLD_START");
-              }
-            }
-          }
-          int pwm = pumpClosedLoop(sys.brewSetpoint, BREW_BASE_PWM,
-                                   BREW_KP, BREW_KI, BREW_KD,
-                                   BREW_MIN_PWM, BREW_MAX_PWM);
-          analogWrite(PUMP_PWM_PIN, pwm);
-          break;
-        }
-        case BREW_PHASE_EXTRACT:
-        default: {
-          // Manual: pot drives PWM with bumpless offset captured at takeover.
-          // pot moves down → PWM drops by the same amount (pressure tapers).
-          // pot moves up   → PWM rises (more flow).
-          int pwm = constrain(sys.pumpPower + sys.handoverOffset,
-                              0, PUMP_PWM_FULL);
-          analogWrite(PUMP_PWM_PIN, pwm);
-          sys.lastPumpPwm = pwm;
-          break;
-        }
+      if (sys.brewPhase == BREW_PHASE_EXTRACT) {
+        // Manual: pot drives PWM with the bumpless offset captured at takeover
+        // (0 if the brew started in manual). pot down → PWM down (taper).
+        int pwm = constrain(sys.pumpPower + sys.handoverOffset,
+                            0, PUMP_PWM_FULL);
+        analogWrite(PUMP_PWM_PIN, pwm);
+        sys.lastPumpPwm = pwm;
+      } else {
+        runBrewSegmentEngine();
       }
       break;
 
@@ -962,6 +974,78 @@ int pumpClosedLoop(float targetBar, int basePwm, float kp, float ki, float kd,
   int output = constrain(pwm, minPwm, maxPwm);
   sys.lastPumpPwm = output;  // for bumpless phase transitions
   return output;
+}
+
+// Stage 1 brew profile engine. Plays the active profile's segment list:
+// slews the pressure setpoint toward each segment's target, runs the shared
+// PI(D) controller with that segment's gain set, and advances when an exit
+// criterion fires. The final segment runs until the user STOPs. A manual
+// pot-rotation takeover hands control to the pot at any point. PROFILES.md §3.
+void runBrewSegmentEngine() {
+  const BrewProfile& prof = BREW_PROFILES[sys.activeProfile];
+  uint8_t idx = sys.segmentIndex;
+  if (idx >= prof.nSegments) idx = prof.nSegments - 1;   // safety clamp
+  const BrewSegment& seg = prof.segments[idx];
+  unsigned long now = millis();
+
+  // Manual takeover — pot rotated past threshold since brew start. Capture a
+  // bumpless PWM offset so pressure doesn't step, then hand to the pot.
+  if (abs(sys.pumpPower - sys.potAtBrewStart) > MANUAL_TAKEOVER_DELTA) {
+    sys.handoverOffset = sys.lastPumpPwm - sys.pumpPower;
+    sys.brewPhase = BREW_PHASE_EXTRACT;
+    Serial.println("INFO:BREW_MANUAL_TAKEOVER");
+    int pwm = constrain(sys.pumpPower + sys.handoverOffset, 0, PUMP_PWM_FULL);
+    analogWrite(PUMP_PWM_PIN, pwm);
+    sys.lastPumpPwm = pwm;
+    return;
+  }
+
+  // Slew the setpoint toward the segment target at the segment's slew rate.
+  float dt = (now - sys.brewSlewLastMs) * 0.001f;
+  sys.brewSlewLastMs = now;
+  if (dt > 0.0f && dt < 0.5f) {
+    float step = seg.slewRate * dt;
+    if (sys.brewSetpoint < seg.targetBar)
+      sys.brewSetpoint = min(seg.targetBar, sys.brewSetpoint + step);
+    else if (sys.brewSetpoint > seg.targetBar)
+      sys.brewSetpoint = max(seg.targetBar, sys.brewSetpoint - step);
+  }
+
+  // Telemetry phase: segment 0 = preinfuse; otherwise ramp while the setpoint
+  // is still moving, hold once it has settled at the segment target.
+  if (idx == 0)
+    sys.brewPhase = BREW_PHASE_PREINFUSE;
+  else if (fabs(sys.brewSetpoint - seg.targetBar) > 0.05f)
+    sys.brewPhase = BREW_PHASE_RAMP;
+  else
+    sys.brewPhase = BREW_PHASE_HOLD;
+
+  // Run the shared PI(D) controller with the segment's gain set.
+  int pwm;
+  if (seg.gains == GAINS_PREINFUSE)
+    pwm = pumpClosedLoop(sys.brewSetpoint, PREINFUSE_BASE_PWM,
+                         PREINFUSE_KP, PREINFUSE_KI, PREINFUSE_KD,
+                         PREINFUSE_MIN_PWM, PREINFUSE_MAX_PWM);
+  else
+    pwm = pumpClosedLoop(sys.brewSetpoint, BREW_BASE_PWM,
+                         BREW_KP, BREW_KI, BREW_KD,
+                         BREW_MIN_PWM, BREW_MAX_PWM);
+  analogWrite(PUMP_PWM_PIN, pwm);
+
+  // Exit criteria — first non-zero criterion to fire advances the segment.
+  // The final segment ignores exit criteria (runs until user STOP).
+  if (idx + 1 < prof.nSegments) {
+    unsigned long elapsed = now - sys.segmentStartMs;
+    bool advance = false;
+    if (seg.exitWeightG     > 0.0f && sys.weight   >= seg.exitWeightG)     advance = true;
+    if (seg.exitDurationMs  > 0    && elapsed      >= seg.exitDurationMs)  advance = true;
+    if (seg.exitPressureBar > 0.0f && sys.pressure >= seg.exitPressureBar) advance = true;
+    if (advance) {
+      sys.segmentIndex   = idx + 1;
+      sys.segmentStartMs = now;
+      Serial.print("INFO:BREW_SEGMENT:"); Serial.println(sys.segmentIndex);
+    }
+  }
 }
 
 void controlBrewHeater() {

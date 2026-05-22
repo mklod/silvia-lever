@@ -3,6 +3,14 @@
 ## Current milestone
 **Alpha — thermoblock PID tuned.** First successful autotune complete (Kp/Ki/Kd = 46.94/0.516/3155.89, TL rule). Derivative-on-measurement + low-pass filter added. Boiler still disabled for single-heater focus; S9.7b measured (1.51 A avg maintenance) → Stage 9 concurrent heating unblocked on measurement side, pending implementation.
 
+## Session 2026-05-22 (01:39) — Stage 1: brew profile engine + Gentle & Sweet
+- Built the segment-table profile engine (PROFILES.md §3.2). A profile = ordered list of `(targetBar, slewRate, gains, exit)` segments; `runBrewSegmentEngine()` plays them through the Stage-0 slew-rate controller. The hardcoded preinfuse/ramp/hold state machine is gone.
+- Two profiles: Profile 0 "Standard 9-bar" (faithful Stage-0 re-expression, regression baseline), Profile 1 "Gentle & Sweet" (light-roast starter — flat 6 bar hold).
+- `SET_PROFILE`/`GET_PROFILES` serial commands. UI `PROF:` button in the debug row cycles profiles; qml_backend learns the list from firmware (no hardcoded names).
+- Compiled clean, flashed, GET_PROFILES verified. **Not yet brew-tested** — Profile 0 regression + Profile 1 6-bar hold need a real shot.
+- Flash gotcha: Teensy re-enumeration browned out Pi 1 mid-flash (it had prior "Undervoltage detected!" in dmesg). Power-cycle + re-flash recovered. Pi PSU is marginal — recommend a beefier 5V supply.
+- Next light-roast profiles per §3.4: Blooming Allongé, Blooming Espresso, Allongé/Turbo, Adaptive Bloom.
+
 ## Session 2026-05-22 (00:36) — Stage 0 brew control finalized (slew-rate), manual takeover, AUTO/MAN toggle
 - Brew-overshoot fight resolved. Three control designs tried on the real machine with a fine restrictive grind:
   1. Open-loop PWM ramp → 14 bar.

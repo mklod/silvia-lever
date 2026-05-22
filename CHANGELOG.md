@@ -10,6 +10,60 @@
 > - Profile system (Stage 8) after a few weeks of real-world use
 > - Autostart silvia on RPi boot (systemd user unit or labwc-pi autostart) so no tap needed at power-on
 
+## Build 2026-05-22--0139 — Stage 1: brew profile engine + Gentle & Sweet
+
+First step of the light-roast profile plan (PROFILES.md §3).
+
+### Firmware — profile engine
+
+- A **profile** is an ordered list of segments; each slews the pressure
+  setpoint toward `targetBar` at `slewRate`, runs the shared
+  `pumpClosedLoop()` PI(D) with a chosen gain set, and advances when any
+  non-zero exit criterion fires (`weight` / `duration` / `pressure`, first
+  to trigger). The final segment runs until user STOP.
+- `runBrewSegmentEngine()` replaces the hardcoded preinfuse/ramp/hold
+  state machine. The Stage-0 slew-rate controller is the substrate —
+  unchanged.
+- Two built-in profiles (`const` arrays in the .ino):
+  - **Profile 0 "Standard 9-bar"** — faithful re-expression of the Stage-0
+    sequence (1 bar preinfuse, exit 1 g / 10 s → slew to 9 bar, hold).
+    Regression baseline.
+  - **Profile 1 "Gentle & Sweet"** — light-roast starter: same preinfuse,
+    then flat 6 bar hold (lower pressure = less channeling on light roasts).
+- New serial commands: `SET_PROFILE <n>`, `GET_PROFILES`.
+- Manual pot-rotation takeover preserved — works from any segment.
+
+### UI — profile picker
+
+- `PROF: <name>` button in the debug row; tap cycles to the next profile.
+- `qml_backend`: `setProfile()` / `cycleProfile()` slots, `GET_PROFILES`
+  on connect, parses `PROFILE:`/`OK:PROFILE_COUNT:` into a learned list
+  (no hardcoded names — UI stays in sync with firmware).
+
+### Verified
+- Compiles clean (Teensy 4.0, 52184 B flash). Flashed; `GET_PROFILES`
+  returns both profiles; silvia picks up the list.
+
+### Not yet verified (needs a brew)
+- Profile 0 regression (should match Stage 0, no overshoot); Profile 1
+  6-bar flat hold; `PROF:` button cycling.
+
+### Flash gotcha
+- A Teensy re-enumeration during flash browned out Pi 1 (dmesg had prior
+  "Undervoltage detected!"). Pi dropped off-network mid-flash; power-cycle
+  recovered it; re-flash completed. Pi PSU / USB load is marginal — worth
+  a beefier supply.
+
+> [!warning] Testing Checklist
+> - [ ] Profile 0 "Standard 9-bar" — pull a brew, confirm same clean curve as Stage 0 (no overshoot)
+>   - Notes:
+> - [ ] `PROF:` button cycles Standard ↔ Gentle & Sweet, name displays
+>   - Notes:
+> - [ ] Profile 1 "Gentle & Sweet" — pull a brew, confirm flat 6-bar hold
+>   - Notes:
+> - [ ] Manual pot takeover still works under the profile engine
+>   - Notes:
+
 ## Build 2026-05-22--0036 — Stage 0 final: slew-rate control, manual takeover, AUTO/MAN toggle
 
 ### Brew control — the design that finally killed the overshoot
