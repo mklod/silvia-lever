@@ -350,27 +350,41 @@ Observed by the user, and it points to a hardware mismatch, not technique:
 
 **Interpretation:** 20 g is already an over-dose for a stock Silvia double
 basket (~14–18 g rated) — the puck should sit *tall*. That it still leaves
-massive headspace in the Ascaso group means the Ascaso group's shower screen
-is set much higher above the portafilter-seating plane than the Silvia
-group's. The Silvia portafilter + Silvia basket were geometry-matched to the
-Silvia group; moving them to the Ascaso group exposes a **vertical geometry
-mismatch** (screen-to-bayonet distance is larger on the Ascaso). And the
-resulting massive headspace is a leading cause of the channeling — water
-pools in the void and hits the puck unevenly when pressure builds.
+massive headspace in the Ascaso group is a **basket-to-group geometry
+mismatch**: the Silvia portafilter + Silvia basket were matched to the
+Silvia group, and the Ascaso group expects its own (matched) baskets. The
+Ascaso Steel UNO 58 mm ships with Ascaso 58 mm baskets — those, not the
+Silvia basket, are matched to the Ascaso group's screen height. The massive
+headspace is then a leading cause of the channeling — water pools in the
+void and hits the puck unevenly when pressure builds.
+
+**Basket-depth physics (the key correction).** The portafilter holds the
+basket rim at a fixed height; the puck sits on the basket *bottom*. So a
+**deeper basket parks the puck lower → MORE headspace**; a **shallower
+basket raises the puck → LESS headspace**. The Rancilio Silvia stock double
+is a relatively deep basket. The Ascaso Steel UNO 58 mm ships with its own
+58 mm baskets (7 / 14 / 18 g traditional + pressurized) — those are
+geometry-matched to the Ascaso group's screen height. Using the deep Silvia
+basket instead parks the puck several mm too low → the massive headspace.
 
 **Fix path (in order):**
-1. **Quantify it.** Tamp a puck, place a coin / marker on top, lock into the
-   Ascaso group, remove, inspect — measures the gap precisely.
-2. **Use an Ascaso-matched basket.** The Ascaso group was designed around
-   Ascaso baskets — their **18 g "double tall" basket** is the obvious
-   candidate; it seats the puck higher. Or measure the gap and source a
-   precision basket (IMS/VST) of the matching depth.
-3. **If a taller basket alone doesn't close it**, the Silvia *portafilter
-   body* basket-seat depth may also differ — switch to an Ascaso portafilter
-   body + basket as a matched set.
-4. **Puck screen** as a supplement once headspace is in a normal range — it
-   bridges only 1.5–3 mm, so it is not a fix for *massive* headspace alone.
-5. Re-dial dose to the chosen basket once geometry is correct.
+1. **Try an Ascaso 18 g basket** — it shipped with the machine, so this is a
+   free test. Drop it into the bottomless portafilter (basket rim is the
+   standard ~70 mm; check it seats on the spring). If the witness mark
+   returns, that is the whole fix.
+2. **Quantify regardless.** Tamp a puck, place a coin / marker on top, lock
+   into the Ascaso group, remove, inspect — measures the gap precisely.
+3. **If the Ascaso basket won't seat in the bottomless PF**, confirm the
+   diagnosis with the Ascaso stock portafilter + Ascaso basket, then decide:
+   keep the Ascaso PF, or source a 58 mm basket of the correct (shallower)
+   depth for the bottomless PF. A 58 mm E61 bottomless PF is confirmed to
+   fit both Ascaso 58 mm groups and Silvia.
+4. **Group gasket** thickness fine-tunes only ~0.5–1 mm — secondary.
+5. **Puck screen** supplements once headspace is in a normal range — bridges
+   only 1.5–3 mm, not a fix for *massive* headspace alone.
+6. Re-dial dose to the chosen basket once geometry is correct.
+7. Verify the Ascaso group is 58 mm (some Ascaso groups are 57 mm; the
+   Silvia 58 mm PF fitting suggests this one is 58).
 
 Sanity items worth doing regardless: install a puck screen, and re-verify the
 scale against a known reference before grinding (cheap to rule out). But the
@@ -523,6 +537,11 @@ brews are reproducible.
 
 ## 6. Revision log
 
+- **2026-05-22 (01:5x)**: §3.5 corrected — basket-depth physics. A *deeper*
+  basket parks the puck lower (more headspace); shallower raises it. Earlier
+  text claimed a "tall" basket "seats the puck higher" — backwards. Fix is
+  the Ascaso-matched basket (the machine ships 58 mm 7/14/18 g baskets); the
+  deep Silvia basket is the mismatch.
 - **2026-05-22 (00:36)**: §3 added — light-roast profile plan, minimal
   profile-engine design, Blooming Allongé spec for our hardware, and the
   Ascaso-group headspace/basket mismatch diagnostic. Old JSON-profile-system
