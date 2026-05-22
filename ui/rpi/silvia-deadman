@@ -1,0 +1,36 @@
+#!/bin/bash
+# Auto-rollback timer. See RPI_RESTORE.md for usage details.
+#   sudo silvia-deadman arm <minutes> "<revert cmd>"
+#   sudo silvia-deadman confirm | cancel | status
+set -euo pipefail
+
+DIR=/var/lib/silvia-deadman
+SCRIPT="$DIR/revert.sh"
+DEADLINE="$DIR/deadline"
+UNIT=silvia-deadman
+
+case "${1:-}" in
+  arm)
+    [ "$#" -ge 3 ] || { echo "usage: silvia-deadman arm <minutes> \"<revert cmd>\""; exit 1; }
+    sudo mkdir -p "$DIR"
+    printf '#!/bin/bash\nset +e\n%s\n' "${*:3}" | sudo tee "$SCRIPT" > /dev/null
+    sudo chmod +x "$SCRIPT"
+    date -d "+$2 minutes" -Is | sudo tee "$DEADLINE" > /dev/null
+    sudo systemctl stop "$UNIT.timer" 2>/dev/null || true
+    sudo systemd-run --unit="$UNIT" --on-active="${2}min" /bin/bash "$SCRIPT" > /dev/null
+    echo "Armed. Fires at $(cat "$DEADLINE"). 'sudo silvia-deadman confirm' to cancel."
+    ;;
+  confirm|cancel)
+    sudo systemctl stop "$UNIT.timer" "$UNIT.service" 2>/dev/null || true
+    sudo rm -f "$DEADLINE" "$SCRIPT"
+    echo "Cancelled."
+    ;;
+  status)
+    [ -f "$DEADLINE" ] && echo "Armed. Fires at $(cat "$DEADLINE")." || echo "Not armed."
+    systemctl list-timers --no-pager 2>/dev/null | grep "$UNIT" || true
+    ;;
+  *)
+    sed -n '2,4p' "$0" | sed 's/^# //'
+    exit 1
+    ;;
+esac

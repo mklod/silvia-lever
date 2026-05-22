@@ -2,6 +2,8 @@
 ui/windows/build/
 ui/windows/dist/
 ui/source/logs/
+ui/source/brew_logs/
+tools/rpi-state-snapshots/
 *.rar
 
 # Python

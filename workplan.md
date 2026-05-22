@@ -79,7 +79,7 @@ Stage 5 – Hardware verification        ██████████  100 %  
 Stage 6A – Scale cold testing          ██████████  100 %  DONE (±0.1 g stability achieved)
 Stage 6B – Scale thermal drift         ░░░░░░░░░░    0 %  (requires live heating)
 Stage 7 – RPi sync                     ██████████  100 %  DONE (shared tree + platform_shim)
-Stage 8 – Profile system               ░░░░░░░░░░    0 %  (deferred)
+Stage 8 – Profile system               ██░░░░░░░░   20 %  (Stage 0 done — closed-loop everywhere; Stage 1+ pending — see PROFILES.md)
 Stage 9 – Dual-heater simultaneous op  ░░░░░░░░░░    0 %  (deferred, after Stage 5–6)
 ──────────────────────────────────────────────────
 TOTAL                                  ████████░░  ~80 %  (10 stages, 7 done — cross-platform)
@@ -325,6 +325,42 @@ Run only after cold testing passes and `COLD_TEST_MODE` is disabled.
 
 ---
 
+## Scale FW Audit (vs. Decent OpenScale, 2026-04-21)
+
+Read of `decentespresso/openscale` (`src/hds.ino` + `src/ADS1232_ADC.cpp`) for
+ideas applicable to our NAU7802-on-Teensy setup. Five tricks identified;
+three accepted for implementation now, two parked.
+
+### Implementing now
+- **#1 Mains-hum notch alignment** — drop NAU7802 SPS from 320 to 20. At 20 SPS
+  each conversion = 50 ms = 3 cycles of 60 Hz mains (and 2.5 cycles of 50 Hz),
+  putting the ADC's internal sinc filter notch close to the line-noise band.
+  Our previous 320 SPS / 32-sample boxcar had a notch at 60 Hz too but with
+  only ~13 dB sidelobe rejection; the ADC's hardware sinc is much sharper.
+- **#2 Trimmed-mean boxcar** — collect 6 raw samples per output, sort, drop the
+  high and low, average the middle 4. Replaces the naive mean of 32 samples.
+  Implemented as a non-blocking accumulator (`scale.available()` polled in the
+  main loop) so the 300 ms window doesn't stall telemetry / state machine.
+- **#4 Zero deadband** — `if (fabsf(w) < 0.15) w = 0.0`. Kills the last-digit
+  twitch on an empty cup tray without hiding real readings.
+
+### Parked for later (TODO)
+- **#3 Drift-compensation EMA** — Decent uses `f_driftCompensation += diff * 0.3`
+  + slow tracking offset. Useful for unattended thermal drift. Risk is that
+  it can absorb a slow real load, so we'd want to gate it on "no recent brew".
+- **#5 Stable-output threshold** — only push display update when delta exceeds
+  threshold. Cheap UI redraw saver. Low priority since our 80 ms telemetry
+  cadence isn't a load problem.
+
+### Explicitly rejected (not applicable)
+- BLE / WebSocket / WiFi-OTA / on-device web apps — we have a wired serial bus
+  to a dedicated UI host (RPi). None of that surface area is wanted.
+- Touch-debounce timers on tare — ours is a deliberate calibration dialog tap.
+- `tareNoDelay()` background averaging — our blocking 100 ms tare is fine
+  since tare is a rare user action.
+
+---
+
 ## Stage 7 — RPi Sync ✓ DONE
 
 **Approach adopted:** single shared source tree at `ui/source/` + small `platform_shim.py` for
@@ -349,7 +385,20 @@ with no platform code. No change needed.
 
 ---
 
-## Stage 8 — Profile System (deferred)
+## Stage 8 — Profile System (Stage 0 done; Stage 1+ pending)
+
+**See `PROFILES.md` for the full Stage 0 → Stage 4 progression.** Stage 8 in
+this workplan is now an umbrella for that progression.
+
+### Stage 0 — Closed-loop pressure throughout (DONE 2026-04-24)
+
+Replaces the original open-loop PWM RAMP with a closed-loop pressure-target
+sweep using a shared PI controller. HOLD is now indefinite (user STOPs the
+brew). Forms the stable platform Stage 1+ profiles layer onto.
+
+### Stage 1+ — Named profiles / adaptive / flow profiling (planned)
+
+Original Stage 8 below is the proposed Stage 1 implementation.
 
 **Goal:** Save/load named brew profiles; two factory presets.
 
@@ -452,12 +501,20 @@ forget that the boiler is primed and hot.
 6. Pull shot (`BEGIN_BREW`) → steam immediately after — no re-prime or re-heat needed
 
 ### Checklist
-- [x] S9.7a **Boiler peak current measured** — 8.3 A (100% duty cycle) for exactly 5 minutes
-        from room temperature to steam setpoint. High thermal mass of heavy brass boiler full
-        of water accounts for the long ramp time.
-- [ ] S9.7b **Boiler maintenance current** — measure steady-state current after setpoint is
-        reached and held for 5+ minutes. Must confirm (maintenance A) + 8.3 A < 15 A before
-        enabling concurrent thermoblock heat-up.
+- [x] S9.7a **Boiler peak current measured** — 8.3 A (100% duty cycle). Cold→setpoint
+        observed at ~5-6 min (first measure 5 min, refined ~6 min on 2026-04-23 with a
+        25 °C → 250 °F run). Heavy brass boiler thermal mass accounts for the long ramp.
+- [x] S9.7c **Thermoblock cold-start ramp measured** (2026-04-24 via WiFi plug) —
+        ~58 s at 8.3 A continuous to reach PID-band handoff (~88 °C from 25 °C cold).
+        Confirms thermoblock has much lower thermal mass than boiler. Stage 9 cold-start
+        budget: boiler 6 min sequential + thermoblock ~1 min concurrent with boiler
+        maintenance ≈ 7 min total cold → ready-to-brew with hot steam.
+- [x] S9.7b **Boiler maintenance current measured** (2026-04-23, WiFi plug via Home Assistant,
+        160-sample CSV export, 6 s cadence) — post-setpoint steady-state (80 samples):
+        **avg 1.51 A, min 0.01 A, max 3.40 A**. Thermoblock-full + boiler-maintenance avg
+        ≈ 9.8 A, safely under 12 A NEC continuous / 15 A breaker. Residual risk:
+        coincident SSR on-ticks (instantaneous 16.6 A) — handled by a priority-mutex
+        (thermoblock wins) in `updateSystemLogic()`.
 - [ ] S9.1 Add `boilerPrimed` / `thermoblockPrimed` flags to `SystemData` struct
 - [ ] S9.2 Set `boilerPrimed = true` in `PRIME_DONE` (steam branch); reset only on `ABORT`
 - [ ] S9.3 Set `thermoblockPrimed = true` in `PRIME_DONE` (brew branch); reset only on `ABORT`
@@ -584,6 +641,12 @@ forget that the boiler is primed and hot.
 |------|------|
 | `firmware/silvia_lever_main/silvia_lever_main.ino` | Main firmware |
 | `firmware/silvia_lever_main/config.h` | Firmware constants, pins, `COLD_TEST_MODE`, `PUMP_ENA_PIN`, `PUMP_PWM_FULL` |
+| `HEATING.md` | Heating control strategy, PID autotune procedure, Stage 9 dual-heater design |
+| `PROFILES.md` | Auto preinfuse + future named-profile system, brew JSON schema |
+| `RPI_RESTORE.md` | Pi state backup/restore + deadman switch usage |
+| `KIOSK.md` | Boot-time optimization journey, L1/L2/L3/L4 paths, Buildroot+Yocto deep dive |
+| `tools/rpi_snapshot.sh` | Pull a config snapshot of the Pi to NAS |
+| `ui/rpi/silvia-deadman` | Auto-rollback timer (`arm`/`confirm`/`status`/`cancel`) |
 | `firmware/PT1000_DEBUG.md` | PT1000 debug investigation log and root cause analysis |
 | `firmware/test_sketches/` | Individual component test sketches |
 | `ui/source/qml_backend.py` | Python↔QML bridge (`CoffeeController`) |

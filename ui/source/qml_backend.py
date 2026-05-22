@@ -4,7 +4,9 @@ from safety_manager import SafetyManager
 from data_logger import DataLogger
 from temperature_controller import TemperatureController
 from settings_manager import SettingsManager
+from brew_recorder import BrewRecorder
 import atexit
+import os
 
 
 def _get_serial_manager_class():
@@ -33,6 +35,9 @@ class CoffeeController(QObject):
     scalesSettledChanged = pyqtSignal(bool)
     scalesTaredChanged = pyqtSignal(bool)
     targetTemperaturesChanged = pyqtSignal(float, float)
+    heatersEnabledChanged = pyqtSignal(bool)
+    autoBrewModeChanged = pyqtSignal(bool)
+    autotuneLineReceived = pyqtSignal(str)  # raw firmware line: AUTOTUNE:... or AUTOTUNE_RESULT:...
     
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -51,6 +56,9 @@ class CoffeeController(QObject):
         self.serial.line_received.connect(self._handle_serial_data)
         self.connected = False
         self._current_state = "IDLE"
+        self._heaters_enabled = False  # mirrors firmware; UI-controlled master switch
+        self._brew_phase = "extract"   # mirrors firmware sub-state during BREWING
+        self._auto_brew_mode = False   # mirrors firmware autoBrewMode flag
         
         # Connect safety signals
         self.safety.emergencyStop.connect(self._emergency_stop)
@@ -80,6 +88,17 @@ class CoffeeController(QObject):
         # <1 or >100000 → not a real cal factor for this load cell.
         if not self._scale_cal or self._scale_cal <= 0 or self._scale_cal > 100000:
             self._scale_cal = 420.0
+
+        # PID gains (optional; default None → firmware keeps its config.h defaults).
+        kp = saved_settings.get("pid_kp")
+        ki = saved_settings.get("pid_ki")
+        kd = saved_settings.get("pid_kd")
+        self._pid_gains = (kp, ki, kd) if (kp is not None) else None
+
+        # Per-brew JSON recorder (substrate for upcoming auto-profile system).
+        # Each brew lands in ui/source/brew_logs/brew_YYYY-MM-DD_HH-MM-SS.json.
+        brew_logs_dir = os.path.join(os.path.dirname(__file__), "brew_logs")
+        self.brew_recorder = BrewRecorder(brew_logs_dir)
         
         # Connection watchdog
         self._connection_timer = QTimer()
@@ -102,6 +121,8 @@ class CoffeeController(QObject):
 
             # Restore scale calibration
             QTimer.singleShot(400, self._restore_scale_calibration)
+            # Restore persisted PID gains (if any), after firmware's had time to boot
+            QTimer.singleShot(600, self._restore_pid_gains)
         except Exception as e:
             self.logger.log_error(f"Failed to start serial: {e}")
             self.connected = False
@@ -294,7 +315,49 @@ class CoffeeController(QObject):
                     "BREWING", "STEAMING", "FLUSHING"
                 ]
                 state = state_names[state_num] if state_num < len(state_names) else "UNKNOWN"
+                prev_state = self._current_state
                 self._current_state = state
+
+                # Per-brew JSON recorder: detect IDLE↔BREWING transitions
+                # and stream samples while brewing. Substrate for upcoming
+                # auto-profile system (profiles will be derived from / replayed
+                # against these recordings).
+                if state == "BREWING" and prev_state != "BREWING":
+                    self.brew_recorder.start(
+                        brew_temp_setpoint=self._brew_target_temp,
+                        steam_temp_setpoint=self._steam_target_temp,
+                        pid_gains=self._pid_gains,
+                        scale_cal=self._scale_cal,
+                    )
+                    self.logger.log_command("Brew recording started")
+                elif prev_state == "BREWING" and state != "BREWING":
+                    completed = (state == "IDLE")
+                    saved = self.brew_recorder.finish(completed_normally=completed)
+                    if saved:
+                        self.logger.log_command(f"Brew recording saved: {saved}")
+                if state == "BREWING":
+                    self.brew_recorder.add_sample(
+                        weight_g=weight,
+                        pressure_bar=pressure,
+                        brew_temp_c=brew_temp,
+                        pump_percent=pump_percent,
+                        valve_pump=valve_pump,
+                        valve_thermoblock=valve_tb,
+                        phase=self._brew_phase,
+                    )
+
+                # Heaters enable flag (field 12 — new since 2026-04-22).
+                # Older firmware won't send it; default to False if missing.
+                heaters_enabled = bool(int(parts[12])) if len(parts) > 12 else False
+                if heaters_enabled != self._heaters_enabled:
+                    self._heaters_enabled = heaters_enabled
+                    self.heatersEnabledChanged.emit(heaters_enabled)
+
+                # Brew phase (field 13). 0=preinfuse, 1=ramp, 2=hold, 3=extract.
+                brew_phase = int(parts[13]) if len(parts) > 13 else 3
+                phase_names = ("preinfuse", "ramp", "hold", "extract")
+                phase_name = phase_names[brew_phase] if 0 <= brew_phase < len(phase_names) else "?"
+                self._brew_phase = phase_name
 
                 # Safety checks on both temperatures
                 if not self.safety.check_temperature(brew_temp):
@@ -351,7 +414,29 @@ class CoffeeController(QObject):
                 self.logger.log_error(f"Failed to parse STATUS: {line} - {e}")
         elif line.startswith("ERROR"):
             self.logger.log_error(line)
-            self.errorOccurred.emit(line)
+            # Benign at startup: the serial RX buffer often carries partial /
+            # stale bytes across a flash; firmware parses them as unknown
+            # commands. Log, don't pester the user with a dialog.
+            if "UNKNOWN_COMMAND" not in line:
+                self.errorOccurred.emit(line)
+        elif line.startswith("AUTOTUNE"):
+            self.logger.log_response(line)
+            self.autotuneLineReceived.emit(line)
+            # On successful completion, persist the auto-applied TL gains so
+            # they survive reconnect (firmware resets gains to config.h defaults
+            # on every boot).
+            if line.startswith("AUTOTUNE_RESULT:") and "applied=TL" in line:
+                try:
+                    tl_segment = line.split("TL=", 1)[1].split(",", 1)[0]
+                    parts = tl_segment.split("/")
+                    kp = float(parts[0]); ki = float(parts[1]); kd = float(parts[2])
+                    self._pid_gains = (kp, ki, kd)
+                    self.settings_manager.save_settings(
+                        self._brew_target_temp, self._steam_target_temp,
+                        self._scale_cal, pid=self._pid_gains)
+                    self.logger.log_command(f"Autotune applied + persisted: Kp={kp} Ki={ki} Kd={kd}")
+                except Exception as e:
+                    self.logger.log_error(f"Failed to parse AUTOTUNE_RESULT: {line} - {e}")
         elif line.startswith("READY") or line.startswith("PONG"):
             self.logger.log_command(f"Received: {line}")
                     
@@ -474,6 +559,61 @@ class CoffeeController(QObject):
         else:
             self.errorOccurred.emit("Cannot confirm prime - not connected")
 
+    @pyqtSlot(bool)
+    def setHeatersEnabled(self, enabled):
+        """Master runtime switch for both SSRs. Firmware defaults OFF at boot."""
+        if self.connected:
+            self.serial.send_command(f"SET_HEATERS_ENABLE {1 if enabled else 0}")
+            self.logger.log_command(f"SET_HEATERS_ENABLE {1 if enabled else 0}")
+        else:
+            self.errorOccurred.emit("Cannot toggle heaters - not connected")
+
+    @pyqtSlot(bool)
+    def setAutoBrewMode(self, auto):
+        """Toggle the firmware's auto-preinfuse sequence on/off.
+        AUTO  = full PREINFUSE → RAMP → HOLD with manual takeover via pot.
+        MANUAL = brew enters EXTRACT immediately, pot drives PWM from t=0.
+        Firmware defaults to MANUAL at boot."""
+        if self.connected:
+            self.serial.send_command(f"SET_AUTO_MODE {1 if auto else 0}")
+            self.logger.log_command(f"SET_AUTO_MODE {1 if auto else 0}")
+            self._auto_brew_mode = auto
+            self.autoBrewModeChanged.emit(auto)
+        else:
+            self.errorOccurred.emit("Cannot toggle auto mode - not connected")
+
+    @pyqtSlot()
+    def heatBrew(self):
+        """Kick firmware into HEATING_BREW without pumping. Called on brew screen enter."""
+        if self.connected:
+            self.serial.send_command("HEAT_BREW")
+            self.logger.log_command("HEAT_BREW")
+
+    @pyqtSlot()
+    def heatSteam(self):
+        """Kick firmware into HEATING_STEAM without pumping. Called on steam overlay open."""
+        if self.connected:
+            self.serial.send_command("HEAT_STEAM")
+            self.logger.log_command("HEAT_STEAM")
+
+    @pyqtSlot()
+    def startAutotune(self):
+        """Kick off relay-feedback autotune. Progress + result come back via autotuneLineReceived."""
+        if self.connected:
+            self.serial.send_command("AUTOTUNE_START")
+            self.logger.log_command("AUTOTUNE_START")
+
+    @pyqtSlot()
+    def stopAutotune(self):
+        """Abort a running autotune."""
+        if self.connected:
+            self.serial.send_command("AUTOTUNE_STOP")
+            self.logger.log_command("AUTOTUNE_STOP")
+
+    @pyqtSlot(result=bool)
+    def heatersEnabled(self):
+        return self._heaters_enabled
+
     @pyqtSlot()
     def tareScales(self):
         """Tare the scales"""
@@ -497,7 +637,15 @@ class CoffeeController(QObject):
         if self.connected:
             self.serial.send_command(f"SET_SCALE_CAL {self._scale_cal}")
             self.logger.log_command(f"Restored scale calibration: {self._scale_cal}")
-    
+
+    def _restore_pid_gains(self):
+        """Re-apply persisted PID gains (from prior autotune) on reconnect."""
+        if self.connected and self._pid_gains and self._pid_gains[0] is not None:
+            kp, ki, kd = self._pid_gains
+            self.serial.send_command(f"SET_PID {kp} {ki} {kd}")
+            self.logger.log_command(f"Restored PID gains: kp={kp} ki={ki} kd={kd}")
+
+
     @pyqtSlot()
     def emergencyStop(self):
         """Manual emergency stop from UI"""

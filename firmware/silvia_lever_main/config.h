@@ -63,7 +63,12 @@
 
 // ─── Brew Thermoblock PID ─────────────────────────────────────────────────────
 // Tune these after testing on the real machine.
-#define PID_KP  30.0   // Proportional gain
+// Tuning note (2026-04-23): Kp dropped from 30 → 8 after observing major
+// overshoot at first hot test. At Kp=30 the output saturates at 100 % duty
+// until error < 8.5 °C — guarantees overshoot given thermoblock lag. Kp=8
+// saturates until error < 32 °C (i.e. the last third of warm-up is
+// PID-modulated). Next step once behaviour settles: relay-feedback autotune.
+#define PID_KP   8.0   // Proportional gain
 #define PID_KI   0.5   // Integral gain
 #define PID_KD   5.0   // Derivative gain
 
@@ -86,11 +91,63 @@
 // which some motor drivers don't respond to.
 #define PUMP_PWM_FULL  254
 
+// ─── Auto Pre-Infusion (BREWING sub-state machine) ───────────────────────────
+// Auto-brew sub-state machine (Stage 0 — slew-rate-limited single-loop):
+//   PREINFUSE: closed-loop PI to PREINFUSE_TARGET_BAR (1.0 bar). Exits on the
+//              first of: PREINFUSE_END_WEIGHT_G in cup OR PREINFUSE_MAX_MS.
+//   RAMP/HOLD: ONE PI(D) loop, ONE set of gains, ONE feedforward base. The
+//              setpoint slowly slews from the preinfuse target up to
+//              BREW_TARGET_BAR at BREW_SLEW_RATE bar/sec, then holds. The
+//              integrator naturally adapts to whatever PWM the current puck
+//              needs — no per-phase BASE_PWM, no integrator surgery, no
+//              bumpless math. Slow setpoint avoids the pump→pressure transport
+//              lag that previously caused HOLD overshoot.
+//   The RAMP / HOLD distinction below is telemetry-only (UI shows which sub-
+//   phase we're in). The controller does not change behavior at the boundary.
+#define PREINFUSE_TARGET_BAR     1.0f   // bar setpoint — gentle wetting
+#define PREINFUSE_END_WEIGHT_G   1.0f   // exit when scale ≥ this (first drips), OR
+#define PREINFUSE_MAX_MS         10000  // hard ceiling on PREINFUSE duration. Prevents
+                                        // a choked / dosed-too-tight puck from holding
+                                        // 1 bar forever — first of (weight, time) wins.
+#define PREINFUSE_BASE_PWM       60     // feed-forward — ~minimum to start flow
+#define PREINFUSE_KP             30.0f
+#define PREINFUSE_KI             5.0f
+#define PREINFUSE_KD             0.0f
+#define PREINFUSE_MIN_PWM        30
+#define PREINFUSE_MAX_PWM        180
+
+#define BREW_TARGET_BAR          9.0f   // final OPV-limited line pressure
+#define BREW_SLEW_RATE           0.8f   // bar/sec — 1.0→9.0 in ~10 s. Lower
+                                        // = gentler/safer. Higher → approaches
+                                        // the dead-time-induced overshoot regime.
+// Manual takeover: if the pump pot is rotated more than this many PWM units
+// away from where it was at brew start, the auto loop hands over to the pot
+// with a bumpless offset (no pressure crash on transition). 25/254 ≈ 10 %
+// of pot range — deliberate gesture, not noise. Tune lower if pot is finer.
+#define MANUAL_TAKEOVER_DELTA    25
+#define BREW_BASE_PWM            80     // small feed-forward; integrator does the work
+#define BREW_KP                  20.0f
+#define BREW_KI                  6.0f
+#define BREW_KD                  10.0f  // small D-term — slow setpoint, modest dP/dt
+#define BREW_MIN_PWM             30
+#define BREW_MAX_PWM             254
+// D-term low-pass filter time constant (sec). Smooths dP/dt to prevent
+// noise from the pressure sensor whipping the pump. ~0.2 s is a balance
+// between responsiveness to real pressure changes and noise rejection.
+#define PUMP_D_FILTER_TAU        0.2f
+// Anti-windup clamp on the pump pressure integrator (units = bar·sec).
+// Bounds the I-term contribution at PUMP_PI_INTEGRAL_MAX × Ki PWM units.
+// At Ki=6 this caps the I contribution at ±300 PWM, which already saturates
+// the 0–254 range — so the clamp mainly limits how fast the integrator can
+// recover from a pressure spike.
+#define PUMP_PI_INTEGRAL_MAX     50.0f
+
 // ─── Cold Test Mode ───────────────────────────────────────────────────────────
 // Uncomment to disable both SSRs completely for dry / water-flow-only testing.
 // All other logic (valves, pump, sensors, serial) runs normally.
-// IMPORTANT: comment this line out again before live heating use.
-#define COLD_TEST_MODE
+// Runtime `heatersEnabled` (default OFF, tap `HEAT` in debug row to enable)
+// now provides the same safety at runtime, so this is usually left off.
+// #define COLD_TEST_MODE
 
 // ─── Scale-only debug ─────────────────────────────────────────────────────────
 // Temporarily disables PT1000, ADS1115, and pot reads in updateSensors() to
@@ -100,7 +157,8 @@
 // ─── Timing Intervals (milliseconds) ─────────────────────────────────────────
 #define TEMP_READ_INTERVAL      500   // Both PT1000s read every 500 ms
 #define PRESSURE_READ_INTERVAL  130   // ADS1115 pressure read interval
-#define SCALE_READ_INTERVAL      80   // NAU7802 scale read interval (can run at ~80 SPS)
+// Scale read pacing: removed — main loop polls scale.available() and consumes
+// samples as the chip produces them at NAU7802_SPS_20 (one every 50 ms).
 #define TELEMETRY_INTERVAL      100   // DATA: packet send interval
 
 // ─── Serial Communication ─────────────────────────────────────────────────────

@@ -21,14 +21,18 @@ class SettingsManager:
             pass
         return self.default_settings.copy()
     
-    def save_settings(self, brew_temp, steam_temp, scale_cal=None):
-        """Save settings to file"""
+    def save_settings(self, brew_temp, steam_temp, scale_cal=None, pid=None):
+        """Save settings to file. `pid` is an optional (kp, ki, kd) tuple."""
         try:
             current_settings = self.load_settings()
             current_settings["brew_temp"] = brew_temp
             current_settings["steam_temp"] = steam_temp
             if scale_cal is not None:
                 current_settings["scale_cal"] = scale_cal
+            if pid is not None:
+                current_settings["pid_kp"] = pid[0]
+                current_settings["pid_ki"] = pid[1]
+                current_settings["pid_kd"] = pid[2]
             with open(self.settings_file, 'w') as f:
                 json.dump(current_settings, f, indent=2)
             return True

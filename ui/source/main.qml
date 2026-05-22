@@ -30,6 +30,13 @@ ApplicationWindow {
 
     property real currentPressure: 0.0
     property real currentWeight: 0.0
+    // Frozen-on-stop snapshots — chart big-number values get pinned to the
+    // last sample at brew end so the user can read final weight + final
+    // pressure after pulling the shot. Live values keep flowing in the
+    // debug row regardless.
+    property real frozenWeight: 0.0
+    property real frozenPressure: 0.0
+    property bool brewDisplayFrozen: false
     property real currentPumpPower: 0.0
     property bool valvePumpEnergised: false        // V1: false=thermoblock, true=boiler
     property bool valveThermoblockEnergised: false // V2: false=drain, true=portafilter
@@ -41,6 +48,13 @@ ApplicationWindow {
     property bool scalesTared: false
     property real brewTargetTemp: 93.0
     property real steamTargetTemp: 130.0
+    property bool heatersEnabled: false
+    property bool autoBrewMode: false   // mirrors firmware autoBrewMode
+    // Priming overlay visibility — driven by the home-screen button tap.
+    // Decoupled from firmware state so the overlay can be shown BEFORE
+    // the user taps START and hangs around until they explicitly dismiss.
+    property bool brewPrimingOpen: false
+    property bool steamPrimingOpen: false
     
     CoffeeController {
         id: controller
@@ -59,7 +73,20 @@ ApplicationWindow {
         onPumpPowerChanged:  function(power) { window.currentPumpPower = power }
         onValvePumpChanged:        function(on) { window.valvePumpEnergised = on }
         onValveThermoblockChanged: function(on) { window.valveThermoblockEnergised = on }
-        onStateChanged:      function(st)    { window.currentState    = st    }
+        onStateChanged:      function(st)    {
+            var wasBrewing = (window.currentState === "BREWING")
+            var nowBrewing = (st === "BREWING")
+            if (wasBrewing && !nowBrewing) {
+                // Brew just ended — snapshot final values and freeze chart big-numbers.
+                window.frozenWeight   = window.currentWeight
+                window.frozenPressure = window.currentPressure
+                window.brewDisplayFrozen = true
+            } else if (!wasBrewing && nowBrewing) {
+                // New brew starting — release the freeze so big-numbers track live again.
+                window.brewDisplayFrozen = false
+            }
+            window.currentState = st
+        }
         onBrewTimeChanged:   function(time)  { window.brewTime        = time  }
         
         onErrorOccurred: function(error) {
@@ -88,6 +115,14 @@ ApplicationWindow {
             window.brewTargetTemp = brewTemp
             window.steamTargetTemp = steamTemp
         }
+
+        onHeatersEnabledChanged: function(enabled) {
+            window.heatersEnabled = enabled
+        }
+
+        onAutoBrewModeChanged: function(auto) {
+            window.autoBrewMode = auto
+        }
     }
     
     StackView {
@@ -111,6 +146,48 @@ ApplicationWindow {
         z: 1000
         spacing: 0
 
+        // Heater enable — LEFT-MOST cell so its tap area doesn't overlap the
+        // bottom-right E-stop or top-right close-app zones. Red when ON
+        // (active hazard); dim grey when OFF. The MouseArea extends above
+        // the 14 px label so it's a finger-sized target (Text on its own is
+        // ~36 device px tall with 2× scale — way too small to hit reliably).
+        Text {
+            Layout.fillWidth: true
+            horizontalAlignment: Text.AlignHCenter
+            color: window.heatersEnabled ? "#e74c3c" : "#888888"
+            font.pixelSize: 14
+            font.family: "Consolas"
+            font.bold: window.heatersEnabled
+            text: "HEAT: " + (window.heatersEnabled ? "ON " : "OFF")
+            MouseArea {
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.verticalCenter: parent.verticalCenter
+                height: 64
+                enabled: connectionStatus.connected
+                onClicked: controller.setHeatersEnabled(!window.heatersEnabled)
+            }
+        }
+        // AUTO/MANUAL brew mode toggle. AUTO = firmware runs the preinfuse →
+        // ramp → hold sequence with manual takeover via pot. MANUAL = pot
+        // drives PWM directly from t=0 of the brew. Maps to SET_AUTO_MODE.
+        Text {
+            Layout.fillWidth: true
+            horizontalAlignment: Text.AlignHCenter
+            color: window.autoBrewMode ? "#27ae60" : "#888888"
+            font.pixelSize: 14
+            font.family: "Consolas"
+            font.bold: window.autoBrewMode
+            text: "BREW: " + (window.autoBrewMode ? "AUTO" : "MAN ")
+            MouseArea {
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.verticalCenter: parent.verticalCenter
+                height: 64
+                enabled: connectionStatus.connected
+                onClicked: controller.setAutoBrewMode(!window.autoBrewMode)
+            }
+        }
         Text {
             Layout.fillWidth: true
             horizontalAlignment: Text.AlignHCenter
@@ -400,7 +477,8 @@ ApplicationWindow {
                             enabled: connectionStatus.connected
                             onClicked: {
                                 window.brewTime = "00:00"
-                                controller.startBrew()
+                                controller.heatBrew()           // kick thermoblock heating
+                                window.brewPrimingOpen = true   // offer optional priming
                                 stackView.push(brewScreen)
                             }
                         }
@@ -448,8 +526,8 @@ ApplicationWindow {
                                         window.steamActive = false
                                         controller.stopSteam()
                                     } else {
-                                        window.steamActive = true
-                                        controller.startSteam()
+                                        controller.heatSteam()        // kick boiler heating
+                                        window.steamPrimingOpen = true
                                     }
                                 }
                             }
@@ -554,21 +632,52 @@ ApplicationWindow {
                 }
 
             // ── Steam priming overlay ──────────────────────────────────────
-            // Visible while firmware is in STATE_PRIMING_STEAM.
+            // Shown when user taps STEAM; START/STOP toggle mirrors flush
+            // button style. X in corner dismisses without any firmware action
+            // (or aborts if priming was already in progress).
             Rectangle {
                 anchors.fill: parent
                 z: 10
-                visible: window.currentState === "PRIMING_STEAM"
+                visible: window.steamPrimingOpen
                 color: Qt.rgba(0, 0, 0, 0.80)
 
                 Rectangle {
                     anchors.centerIn: parent
                     width: Math.min(parent.width - 40, 420)
-                    height: steamPrimingCol.implicitHeight + 56
+                    height: steamPrimingCol.implicitHeight + 80
                     color: Qt.rgba(1, 1, 1, 0.08)
                     radius: 18
                     border.color: "#e74c3c"
                     border.width: 2
+
+                    // X close button — top right
+                    Rectangle {
+                        width: 40; height: 40
+                        radius: 20
+                        anchors.top: parent.top
+                        anchors.right: parent.right
+                        anchors.margins: 8
+                        color: steamPrimeCloseArea.pressed ? "#555555" : "transparent"
+                        border.color: "#bbbbbb"
+                        border.width: 1
+                        Text {
+                            anchors.centerIn: parent
+                            text: "×"
+                            color: "#ffffff"
+                            font { pixelSize: 24; bold: true }
+                        }
+                        MouseArea {
+                            id: steamPrimeCloseArea
+                            anchors.fill: parent
+                            onClicked: {
+                                if (window.currentState === "PRIMING_STEAM") {
+                                    controller.stopSteam()
+                                }
+                                window.steamActive = false
+                                window.steamPrimingOpen = false
+                            }
+                        }
+                    }
 
                     ColumnLayout {
                         id: steamPrimingCol
@@ -586,9 +695,8 @@ ApplicationWindow {
                         Text {
                             Layout.fillWidth: true
                             Layout.alignment: Qt.AlignHCenter
-                            text: "Water is pumping into the steam boiler.\n" +
-                                  "Watch the boiler overflow outlet for the first drops of water.\n" +
-                                  "Press CONFIRM once you see overflow."
+                            text: "Tap START to begin pumping water into the boiler.\n" +
+                                  "Watch the boiler overflow outlet. Tap STOP once you see water."
                             color: "#dddddd"
                             font.pixelSize: 15
                             wrapMode: Text.WordWrap
@@ -600,6 +708,7 @@ ApplicationWindow {
                             Layout.alignment: Qt.AlignHCenter
                             width: 12; height: 12; radius: 6
                             color: "#e74c3c"
+                            visible: window.currentState === "PRIMING_STEAM"
                             SequentialAnimation on opacity {
                                 loops: Animation.Infinite
                                 NumberAnimation { to: 0.2; duration: 600 }
@@ -607,46 +716,47 @@ ApplicationWindow {
                             }
                         }
 
-                        // CONFIRM button
+                        // START / STOP toggle
                         Rectangle {
+                            id: steamPrimeToggle
                             Layout.alignment: Qt.AlignHCenter
                             width: 280; height: 68
                             radius: 16
-                            color: steamPrimeConfirmArea.pressed ? "#922b21" : "#e74c3c"
+                            property bool priming: window.currentState === "PRIMING_STEAM"
+                            color: steamPrimeToggle.priming
+                                ? (steamPrimeToggleArea.pressed ? "#922b21" : "#e74c3c")
+                                : (steamPrimeToggleArea.pressed ? "#1a6b38" : "#27ae60")
 
                             Text {
                                 anchors.centerIn: parent
-                                text: "CONFIRM — OVERFLOW SEEN"
+                                text: steamPrimeToggle.priming ? "STOP — OVERFLOW SEEN" : "START PRIMING"
                                 color: "white"
                                 font { pixelSize: 17; bold: true }
                             }
                             MouseArea {
-                                id: steamPrimeConfirmArea
-                                anchors.fill: parent
-                                onClicked: controller.primeDone()
-                            }
-                        }
-
-                        // CANCEL button
-                        Rectangle {
-                            Layout.alignment: Qt.AlignHCenter
-                            width: 160; height: 52
-                            radius: 12
-                            color: steamPrimeCancelArea.pressed ? "#555555" : "#7f8c8d"
-
-                            Text {
-                                anchors.centerIn: parent
-                                text: "CANCEL"
-                                color: "white"
-                                font { pixelSize: 15; bold: true }
-                            }
-                            MouseArea {
-                                id: steamPrimeCancelArea
+                                id: steamPrimeToggleArea
                                 anchors.fill: parent
                                 onClicked: {
-                                    window.steamActive = false
-                                    controller.stopSteam()
+                                    if (steamPrimeToggle.priming) {
+                                        // Priming done → walk firmware through
+                                        // PRIMING_STEAM → HEATING_STEAM → STEAMING.
+                                        // A brief gap between primeDone and
+                                        // beginSteam lets firmware finish processing
+                                        // the state transition before the next cmd.
+                                        controller.primeDone()
+                                        steamBeginTimer.start()
+                                        window.steamActive = true
+                                        window.steamPrimingOpen = false
+                                    } else {
+                                        controller.startSteam()
+                                    }
                                 }
+                            }
+                            Timer {
+                                id: steamBeginTimer
+                                interval: 120
+                                repeat: false
+                                onTriggered: controller.beginSteam()
                             }
                         }
                     }
@@ -664,23 +774,53 @@ ApplicationWindow {
             color: "#000000"
 
             // ── Priming overlay ────────────────────────────────────────────
-            // Visible while firmware is in STATE_PRIMING_BREW.
-            // Pump and valve are already running; user watches for overflow
-            // then taps CONFIRM to stop the pump and begin heating.
+            // Shown when user taps BREW on home screen; START/STOP toggle
+            // mirrors flush button style. X dismisses the overlay (and
+            // aborts + pops back to home if priming was already in progress).
             Rectangle {
                 anchors.fill: parent
                 z: 10
-                visible: window.currentState === "PRIMING_BREW"
+                visible: window.brewPrimingOpen
                 color: Qt.rgba(0, 0, 0, 0.80)
 
                 Rectangle {
                     anchors.centerIn: parent
                     width: Math.min(parent.width - 40, 420)
-                    height: brewPrimingCol.implicitHeight + 56
+                    height: brewPrimingCol.implicitHeight + 80
                     color: Qt.rgba(1, 1, 1, 0.08)
                     radius: 18
                     border.color: "#3498db"
                     border.width: 2
+
+                    // X close button — top right
+                    Rectangle {
+                        width: 40; height: 40
+                        radius: 20
+                        anchors.top: parent.top
+                        anchors.right: parent.right
+                        anchors.margins: 8
+                        color: brewPrimeCloseArea.pressed ? "#555555" : "transparent"
+                        border.color: "#bbbbbb"
+                        border.width: 1
+                        Text {
+                            anchors.centerIn: parent
+                            text: "×"
+                            color: "#ffffff"
+                            font { pixelSize: 24; bold: true }
+                        }
+                        MouseArea {
+                            id: brewPrimeCloseArea
+                            anchors.fill: parent
+                            onClicked: {
+                                if (window.currentState === "PRIMING_BREW") {
+                                    controller.stopBrew()
+                                }
+                                window.brewPrimingOpen = false
+                                // Stay on the brew screen — user can use the
+                                // top-left back arrow to return to home.
+                            }
+                        }
+                    }
 
                     ColumnLayout {
                         id: brewPrimingCol
@@ -698,9 +838,8 @@ ApplicationWindow {
                         Text {
                             Layout.fillWidth: true
                             Layout.alignment: Qt.AlignHCenter
-                            text: "Water is pumping through the thermoblock.\n" +
-                                  "Watch the group head outlet for the first drops of water.\n" +
-                                  "Press CONFIRM once you see overflow."
+                            text: "Tap START to begin pumping water through the thermoblock.\n" +
+                                  "Watch the group head outlet. Tap STOP once you see water."
                             color: "#dddddd"
                             font.pixelSize: 15
                             wrapMode: Text.WordWrap
@@ -708,11 +847,11 @@ ApplicationWindow {
                             lineHeight: 1.4
                         }
 
-                        // Pulsing indicator
                         Rectangle {
                             Layout.alignment: Qt.AlignHCenter
                             width: 12; height: 12; radius: 6
                             color: "#3498db"
+                            visible: window.currentState === "PRIMING_BREW"
                             SequentialAnimation on opacity {
                                 loops: Animation.Infinite
                                 NumberAnimation { to: 0.2; duration: 600 }
@@ -720,45 +859,33 @@ ApplicationWindow {
                             }
                         }
 
-                        // CONFIRM button
+                        // START / STOP toggle
                         Rectangle {
+                            id: brewPrimeToggle
                             Layout.alignment: Qt.AlignHCenter
                             width: 280; height: 68
                             radius: 16
-                            color: brewPrimeConfirmArea.pressed ? "#1a6b38" : "#27ae60"
+                            property bool priming: window.currentState === "PRIMING_BREW"
+                            color: brewPrimeToggle.priming
+                                ? (brewPrimeToggleArea.pressed ? "#922b21" : "#e74c3c")
+                                : (brewPrimeToggleArea.pressed ? "#1a6b38" : "#27ae60")
 
                             Text {
                                 anchors.centerIn: parent
-                                text: "CONFIRM — OVERFLOW SEEN"
+                                text: brewPrimeToggle.priming ? "STOP — OVERFLOW SEEN" : "START PRIMING"
                                 color: "white"
                                 font { pixelSize: 17; bold: true }
                             }
                             MouseArea {
-                                id: brewPrimeConfirmArea
-                                anchors.fill: parent
-                                onClicked: controller.primeDone()
-                            }
-                        }
-
-                        // CANCEL button
-                        Rectangle {
-                            Layout.alignment: Qt.AlignHCenter
-                            width: 160; height: 52
-                            radius: 12
-                            color: brewPrimeCancelArea.pressed ? "#555555" : "#7f8c8d"
-
-                            Text {
-                                anchors.centerIn: parent
-                                text: "CANCEL"
-                                color: "white"
-                                font { pixelSize: 15; bold: true }
-                            }
-                            MouseArea {
-                                id: brewPrimeCancelArea
+                                id: brewPrimeToggleArea
                                 anchors.fill: parent
                                 onClicked: {
-                                    controller.stopBrew()
-                                    stackView.pop()
+                                    if (brewPrimeToggle.priming) {
+                                        controller.primeDone()
+                                        window.brewPrimingOpen = false  // auto-dismiss
+                                    } else {
+                                        controller.startBrew()
+                                    }
                                 }
                             }
                         }
@@ -818,8 +945,8 @@ ApplicationWindow {
                         pressureChart.dataPoints = []
                         coffeeChart.startTime    = null
                         pressureChart.startTime  = null
-                        coffeeChart.maxTime      = 30
-                        pressureChart.maxTime    = 30
+                        coffeeChart.maxTime      = 40
+                        pressureChart.maxTime    = 40
                         coffeeChart.requestPaint()
                         pressureChart.requestPaint()
                         controller.beginBrew()
@@ -953,20 +1080,26 @@ ApplicationWindow {
                                 height: parent.height - 1.9
 
                                 property var dataPoints: []
-                                property real maxWeight: 100
-                                property real maxTime: 30   // Start at 30 s; grows, never shrinks mid-brew
+                                property real maxWeight: 50   // Default y-axis 0-50 g; only expands once data overflows
+                                property real maxTime: 40   // Start at 40 s fixed; only expands once data overflows
                                 property var startTime: null
 
                                 function updateScale() {
                                     if (dataPoints.length > 0) {
-                                        var maxW = 100
-                                        var maxT = maxTime  // Never shrink below current axis
+                                        var dataMaxW = 0
+                                        var dataMaxT = 0
                                         for (var i = 0; i < dataPoints.length; i++) {
-                                            if (dataPoints[i].weight > maxW) maxW = dataPoints[i].weight
-                                            if (dataPoints[i].time   > maxT) maxT = dataPoints[i].time
+                                            if (dataPoints[i].weight > dataMaxW) dataMaxW = dataPoints[i].weight
+                                            if (dataPoints[i].time   > dataMaxT) dataMaxT = dataPoints[i].time
                                         }
-                                        maxWeight = Math.max(maxW * 1.1, 1)
-                                        maxTime   = Math.max(maxT * 1.1, 30)
+                                        // Only scale y-axis up when data has actually overflowed; never shrink below 50.
+                                        if (dataMaxW > maxWeight) {
+                                            maxWeight = dataMaxW * 1.1
+                                        }
+                                        // Only scale x-axis up when data has actually overflowed; never shrink.
+                                        if (dataMaxT > maxTime) {
+                                            maxTime = dataMaxT * 1.1
+                                        }
                                     }
                                 }
                                 
@@ -978,7 +1111,7 @@ ApplicationWindow {
                                     ctx.strokeStyle = "#7f8c8d"
                                     ctx.lineWidth = 0.5
                                     ctx.fillStyle = "#bdc3c7"
-                                    ctx.font = "10px Arial"
+                                    ctx.font = "10px sans-serif"
                                     for (var i = 0; i <= 5; i++) {
                                         var y = (height / 5) * i
                                         ctx.beginPath()
@@ -996,9 +1129,9 @@ ApplicationWindow {
                                     }
                                     
                                     // Draw current weight value
-                                    ctx.fillStyle = "white"
-                                    ctx.font = "20px Arial"
-                                    var weightText = window.currentWeight.toFixed(1) + " g"
+                                    ctx.fillStyle = "#00bcd4"  // match data line (cyan)
+                                    ctx.font = "bold 28px sans-serif"
+                                    var weightText = (window.brewDisplayFrozen ? window.frozenWeight : window.currentWeight).toFixed(1) + " g"
                                     var textWidth = ctx.measureText(weightText).width
                                     // Position value clear of y-axis labels,
                                     // aligned vertically with the chart title
@@ -1086,20 +1219,26 @@ ApplicationWindow {
                                 height: parent.height - 1.9
 
                                 property var dataPoints: []
-                                property real maxPressure: 16
-                                property real maxTime: 30   // Start at 30 s; grows, never shrinks mid-brew
+                                property real maxPressure: 10   // Default y-axis 0-10 bar; only expands once data overflows
+                                property real maxTime: 40   // Start at 40 s fixed; only expands once data overflows
                                 property var startTime: null
 
                                 function updateScale() {
                                     if (dataPoints.length > 0) {
-                                        var maxP = 16
-                                        var maxT = maxTime  // Never shrink below current axis
+                                        var dataMaxP = 0
+                                        var dataMaxT = 0
                                         for (var i = 0; i < dataPoints.length; i++) {
-                                            if (dataPoints[i].pressure > maxP) maxP = dataPoints[i].pressure
-                                            if (dataPoints[i].time     > maxT) maxT = dataPoints[i].time
+                                            if (dataPoints[i].pressure > dataMaxP) dataMaxP = dataPoints[i].pressure
+                                            if (dataPoints[i].time     > dataMaxT) dataMaxT = dataPoints[i].time
                                         }
-                                        maxPressure = Math.max(maxP * 1.1, 1)
-                                        maxTime     = Math.max(maxT * 1.1, 30)
+                                        // Only scale y-axis up when data has actually overflowed; never shrink below 10.
+                                        if (dataMaxP > maxPressure) {
+                                            maxPressure = dataMaxP * 1.1
+                                        }
+                                        // Only scale x-axis up when data has actually overflowed; never shrink.
+                                        if (dataMaxT > maxTime) {
+                                            maxTime = dataMaxT * 1.1
+                                        }
                                     }
                                 }
                                 
@@ -1111,7 +1250,7 @@ ApplicationWindow {
                                     ctx.strokeStyle = "#7f8c8d"
                                     ctx.lineWidth = 0.5
                                     ctx.fillStyle = "#bdc3c7"
-                                    ctx.font = "10px Arial"
+                                    ctx.font = "10px sans-serif"
                                     for (var i = 0; i <= 5; i++) {
                                         var y = (height / 5) * i
                                         ctx.beginPath()
@@ -1129,9 +1268,9 @@ ApplicationWindow {
                                     }
                                     
                                     // Draw current pressure value
-                                    ctx.fillStyle = "white"
-                                    ctx.font = "20px Arial"
-                                    var pressureText = window.currentPressure.toFixed(1) + " bar"
+                                    ctx.fillStyle = "#9b59b6"  // match data line (purple)
+                                    ctx.font = "bold 28px sans-serif"
+                                    var pressureText = (window.brewDisplayFrozen ? window.frozenPressure : window.currentPressure).toFixed(1) + " bar"
                                     var textWidth_ = ctx.measureText(pressureText).width
                                     // Position value clear of y-axis labels,
                                     // aligned vertically with the chart title
@@ -1437,7 +1576,7 @@ ApplicationWindow {
             Item {
                 id: card
                 anchors.top: parent.top
-                anchors.topMargin: 90
+                anchors.topMargin: 16
                 anchors.horizontalCenter: parent.horizontalCenter
                 width:  Math.min(parent.width - 80, 440)
                 height: settingsCol.implicitHeight
@@ -1450,12 +1589,12 @@ ApplicationWindow {
                     id: settingsCol
                     anchors.centerIn: parent
                     width: parent.width - 32
-                    spacing: 20
+                    spacing: 10
 
                     // ── Header ──────────────────────────────────────────────
                     Text {
                         Layout.alignment: Qt.AlignHCenter
-                        text: "TEMPERATURE SETTINGS"
+                        text: "TEMPERATURE"
                         color: "#ffffff"
                         font { pixelSize: 18; bold: true }
                     }
@@ -1606,7 +1745,7 @@ ApplicationWindow {
                     // ── SCALE section header ─────────────────────────────────
                     Text {
                         Layout.alignment: Qt.AlignHCenter
-                        Layout.topMargin: 12
+                        Layout.topMargin: 4
                         text: "SCALE"
                         color: "#ffffff"
                         font { pixelSize: 18; bold: true }
@@ -1655,6 +1794,39 @@ ApplicationWindow {
                                 id: calArea
                                 anchors.fill: parent
                                 onClicked: calDialog.open()
+                            }
+                        }
+                    }
+
+                    // ── PID section ──────────────────────────────────────────
+                    Text {
+                        Layout.alignment: Qt.AlignHCenter
+                        Layout.topMargin: 4
+                        text: "PID"
+                        color: "#ffffff"
+                        font { pixelSize: 18; bold: true }
+                    }
+
+                    Rectangle {
+                        Layout.fillWidth: true
+                        height: 48
+                        color: autotuneArea.pressed ? Qt.rgba(1,1,1,0.15) : "transparent"
+                        border.color: "#ffffff"
+                        border.width: 1
+                        radius: 2
+                        Text {
+                            anchors.centerIn: parent
+                            text: "AUTOTUNE"
+                            color: "#ffffff"
+                            font.pixelSize: 14
+                            font.bold: true
+                        }
+                        MouseArea {
+                            id: autotuneArea
+                            anchors.fill: parent
+                            onClicked: {
+                                autotuneDialog.open()
+                                controller.startAutotune()
                             }
                         }
                     }
@@ -1923,6 +2095,180 @@ ApplicationWindow {
                         onClicked: {
                             controller.calibrateScales(calWeightSpin.value)
                             calDialog.close()
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // ── Autotune Dialog ──────────────────────────────────────────────────────
+    // Modal progress view during PID autotune. Subscribes to autotuneLineReceived
+    // and accumulates firmware status lines in a scrolling log. On AUTOTUNE_RESULT
+    // shows the suggested gain tables. X / CANCEL both call controller.stopAutotune().
+    Dialog {
+        id: autotuneDialog
+        anchors.centerIn: parent
+        width: 680
+        height: 460
+        padding: 0
+        modal: true
+        closePolicy: Popup.NoAutoClose  // must cancel or close explicitly
+
+        property string logText: ""
+        property string resultText: ""
+        property bool finished: false
+
+        onOpened: {
+            logText = ""
+            resultText = ""
+            finished = false
+        }
+
+        Connections {
+            target: controller
+            function onAutotuneLineReceived(line) {
+                autotuneDialog.logText += line + "\n"
+                if (line.indexOf("AUTOTUNE_RESULT:") === 0) {
+                    autotuneDialog.resultText = line.substring(16)
+                    autotuneDialog.finished = true
+                } else if (line.indexOf("AUTOTUNE:FAIL") === 0 ||
+                           line.indexOf("AUTOTUNE:CANCELLED") === 0) {
+                    autotuneDialog.finished = true
+                }
+            }
+        }
+
+        background: Rectangle {
+            color: "#000000"
+            border.color: "#ffffff"
+            border.width: 1
+            radius: 4
+        }
+
+        contentItem: Item {
+            anchors.fill: parent
+
+            // Close X — aborts autotune if running
+            Rectangle {
+                anchors.top: parent.top
+                anchors.right: parent.right
+                anchors.margins: 10
+                width: 32
+                height: 32
+                color: atCloseArea.pressed ? Qt.rgba(1,1,1,0.2) : "transparent"
+                border.color: "#ffffff"
+                border.width: 1
+                radius: 2
+                z: 2
+                Text {
+                    anchors.centerIn: parent
+                    text: "✕"
+                    color: "#ffffff"
+                    font.pixelSize: 16
+                    font.bold: true
+                }
+                MouseArea {
+                    id: atCloseArea
+                    anchors.fill: parent
+                    onClicked: {
+                        if (!autotuneDialog.finished) controller.stopAutotune()
+                        autotuneDialog.close()
+                    }
+                }
+            }
+
+            ColumnLayout {
+                anchors.fill: parent
+                anchors.margins: 20
+                anchors.topMargin: 50
+                spacing: 12
+
+                Text {
+                    Layout.alignment: Qt.AlignHCenter
+                    text: "PID AUTOTUNE"
+                    color: "#ffffff"
+                    font { pixelSize: 20; bold: true }
+                }
+
+                Text {
+                    Layout.fillWidth: true
+                    text: autotuneDialog.finished
+                        ? "Done. Copy gains into firmware config.h (PID_KP / PID_KI / PID_KD) and reflash."
+                        : "Relay-feedback running. Thermoblock oscillating around setpoint; 5 measured cycles required. This may take several minutes."
+                    color: "#bbbbbb"
+                    font.pixelSize: 12
+                    wrapMode: Text.WordWrap
+                    horizontalAlignment: Text.AlignHCenter
+                }
+
+                // Scrolling log
+                Rectangle {
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    color: "#111111"
+                    border.color: "#444444"
+                    border.width: 1
+                    radius: 2
+
+                    Flickable {
+                        id: logFlick
+                        anchors.fill: parent
+                        anchors.margins: 8
+                        contentWidth: width
+                        contentHeight: logTextItem.implicitHeight
+                        clip: true
+
+                        Text {
+                            id: logTextItem
+                            width: logFlick.width
+                            text: autotuneDialog.logText
+                            color: "#e0e0e0"
+                            font.family: "Consolas"
+                            font.pixelSize: 11
+                            wrapMode: Text.WrapAnywhere
+                            onHeightChanged: {
+                                // Auto-scroll to bottom as new lines arrive
+                                if (height > logFlick.height)
+                                    logFlick.contentY = height - logFlick.height
+                            }
+                        }
+                    }
+                }
+
+                // Result (shown when finished with gains)
+                Text {
+                    Layout.fillWidth: true
+                    visible: autotuneDialog.resultText.length > 0
+                    text: autotuneDialog.resultText
+                    color: "#27ae60"
+                    font.family: "Consolas"
+                    font.pixelSize: 12
+                    wrapMode: Text.WrapAnywhere
+                }
+
+                // Cancel / Close button
+                Rectangle {
+                    Layout.alignment: Qt.AlignHCenter
+                    Layout.preferredWidth: 220
+                    Layout.preferredHeight: 48
+                    color: atBtnArea.pressed ? Qt.rgba(1,1,1,0.15) : "transparent"
+                    border.color: "#ffffff"
+                    border.width: 2
+                    radius: 2
+                    Text {
+                        anchors.centerIn: parent
+                        text: autotuneDialog.finished ? "CLOSE" : "CANCEL"
+                        color: "#ffffff"
+                        font.pixelSize: 16
+                        font.bold: true
+                    }
+                    MouseArea {
+                        id: atBtnArea
+                        anchors.fill: parent
+                        onClicked: {
+                            if (!autotuneDialog.finished) controller.stopAutotune()
+                            autotuneDialog.close()
                         }
                     }
                 }
