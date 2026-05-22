@@ -348,48 +348,47 @@ Observed by the user, and it points to a hardware mismatch, not technique:
 - The **only variable changed is the group head.** Beans/grind/scale/prep
   are static. Grind sanity-checks out (30–40 s, 1:2 ratio on a normal shot).
 
-**Interpretation:** 20 g is already an over-dose for a stock Silvia double
-basket (~14–18 g rated) — the puck should sit *tall*. That it still leaves
-massive headspace in the Ascaso group is a **basket-to-group geometry
-mismatch**: the Silvia portafilter + Silvia basket were matched to the
-Silvia group, and the Ascaso group expects its own (matched) baskets. The
-Ascaso Steel UNO 58 mm ships with Ascaso 58 mm baskets — those, not the
-Silvia basket, are matched to the Ascaso group's screen height. The massive
-headspace is then a leading cause of the channeling — water pools in the
-void and hits the puck unevenly when pressure builds.
+**Interpretation — it's the portafilter, not the basket.** The basket lip
+sits at the portafilter's top rim; you dose *to the basket*, so the puck top
+always lands just below the lip regardless of basket depth (a "taller"
+basket is simply a higher dose rating). Basket choice therefore does **not**
+move the lip-to-screen distance. Decisively: the basket, dose, grind and
+portafilter were **identical on both groups** — so the basket cannot explain
+the *difference*. The only thing that changed is the group.
 
-**Basket-depth physics (the key correction).** The portafilter holds the
-basket rim at a fixed height; the puck sits on the basket *bottom*. So a
-**deeper basket parks the puck lower → MORE headspace**; a **shallower
-basket raises the puck → LESS headspace**. The Rancilio Silvia stock double
-is a relatively deep basket. The Ascaso Steel UNO 58 mm ships with its own
-58 mm baskets (7 / 14 / 18 g traditional + pressurized) — those are
-geometry-matched to the Ascaso group's screen height. Using the deep Silvia
-basket instead parks the puck several mm too low → the massive headspace.
+With the portafilter unchanged, the variable is **how the portafilter ears
+seat against the group's bayonet** — that geometry sets the basket-lip-to-
+shower-screen distance. The Silvia portafilter's ears were cut for the
+Silvia group; in the Ascaso group they "fit" (lock in) but seat the basket
+lip farther from the screen → the massive headspace, which then drives the
+channeling (water pools in the void, hits the puck unevenly on pressure
+build).
 
 **Fix path (in order):**
-1. **Try an Ascaso 18 g basket** — it shipped with the machine, so this is a
-   free test. Drop it into the bottomless portafilter (basket rim is the
-   standard ~70 mm; check it seats on the spring). If the witness mark
-   returns, that is the whole fix.
-2. **Quantify regardless.** Tamp a puck, place a coin / marker on top, lock
-   into the Ascaso group, remove, inspect — measures the gap precisely.
-3. **If the Ascaso basket won't seat in the bottomless PF**, confirm the
-   diagnosis with the Ascaso stock portafilter + Ascaso basket, then decide:
-   keep the Ascaso PF, or source a 58 mm basket of the correct (shallower)
-   depth for the bottomless PF. A 58 mm E61 bottomless PF is confirmed to
-   fit both Ascaso 58 mm groups and Silvia.
-4. **Group gasket** thickness fine-tunes only ~0.5–1 mm — secondary.
-5. **Puck screen** supplements once headspace is in a normal range — bridges
-   only 1.5–3 mm, not a fix for *massive* headspace alone.
-6. Re-dial dose to the chosen basket once geometry is correct.
-7. Verify the Ascaso group is 58 mm (some Ascaso groups are 57 mm; the
-   Silvia 58 mm PF fitting suggests this one is 58).
+1. **Free confirming test:** lock in the **Ascaso stock (spouted)
+   portafilter** that shipped with the machine — its ears are matched to the
+   Ascaso group. Tamp a normal dose, place a coin on the puck, lock in,
+   remove, inspect. A proper witness mark with the Ascaso PF (and none with
+   the Silvia PF) confirms the portafilter geometry is the cause.
+2. **Real fix:** use an **Ascaso-matched portafilter**. For bottomless
+   channeling diagnostics, get an Ascaso bottomless portafilter, or convert
+   an Ascaso spouted PF (cut/machine the spouts off). An aftermarket
+   "58 mm E61" bottomless PF may lock into the Ascaso group but is **not
+   guaranteed to seat at the right height** — its ears are E61-pattern, the
+   same mismatch family as the Silvia PF.
+3. **Group gasket** thickness is a real but small lever (~0.5–2 mm): a
+   thinner group gasket lets the PF seat higher → less headspace. Worth a
+   try if the residual gap after a matched PF is minor; won't cover a
+   *massive* gap alone.
+4. **Puck screen** supplements once headspace is in a normal range — bridges
+   only 1.5–3 mm.
+5. Verify the Ascaso group is 58 mm (some Ascaso groups are 57 mm; the
+   Silvia 58 mm PF locking in suggests this one is 58).
 
-Sanity items worth doing regardless: install a puck screen, and re-verify the
-scale against a known reference before grinding (cheap to rule out). But the
-evidence — single variable changed, channeling appeared with it — strongly
-implicates the basket/portafilter ↔ Ascaso-group geometry mismatch.
+Basket size/depth stays a free choice — just dose to whatever basket you
+run. Scale re-check before grinding is still a cheap sanity item. But the
+single-variable evidence puts this squarely on the **portafilter ↔ Ascaso-
+group ear/bayonet geometry**.
 
 ### 3.6 Build order
 
@@ -537,11 +536,14 @@ brews are reproducible.
 
 ## 6. Revision log
 
-- **2026-05-22 (01:50)**: §3.5 corrected — basket-depth physics. A *deeper*
-  basket parks the puck lower (more headspace); shallower raises it. Earlier
-  text claimed a "tall" basket "seats the puck higher" — backwards. Fix is
-  the Ascaso-matched basket (the machine ships 58 mm 7/14/18 g baskets); the
-  deep Silvia basket is the mismatch.
+- **2026-05-22 (01:57)**: §3.5 corrected again — the headspace cause is the
+  **portafilter**, not the basket. You dose to the basket, so basket depth
+  doesn't move the lip-to-screen distance; and the basket/dose were
+  identical on both groups, so the basket can't explain the difference. The
+  variable is the portafilter-ear ↔ group-bayonet seating geometry. Fix is
+  an Ascaso-matched portafilter; confirm free with the Ascaso stock PF.
+- **2026-05-22 (01:50)**: §3.5 basket-depth note (later superseded — see
+  the entry above).
 - **2026-05-22 (00:36)**: §3 added — light-roast profile plan, minimal
   profile-engine design, Blooming Allongé spec for our hardware, and the
   Ascaso-group headspace/basket mismatch diagnostic. Old JSON-profile-system
