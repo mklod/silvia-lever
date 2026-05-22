@@ -537,7 +537,7 @@ brews are reproducible.
 
 ## 6. Revision log
 
-- **2026-05-22 (01:5x)**: §3.5 corrected — basket-depth physics. A *deeper*
+- **2026-05-22 (01:50)**: §3.5 corrected — basket-depth physics. A *deeper*
   basket parks the puck lower (more headspace); shallower raises it. Earlier
   text claimed a "tall" basket "seats the puck higher" — backwards. Fix is
   the Ascaso-matched basket (the machine ships 58 mm 7/14/18 g baskets); the
