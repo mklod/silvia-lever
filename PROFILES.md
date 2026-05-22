@@ -348,47 +348,37 @@ Observed by the user, and it points to a hardware mismatch, not technique:
 - The **only variable changed is the group head.** Beans/grind/scale/prep
   are static. Grind sanity-checks out (30–40 s, 1:2 ratio on a normal shot).
 
-**Interpretation — it's the portafilter, not the basket.** The basket lip
-sits at the portafilter's top rim; you dose *to the basket*, so the puck top
-always lands just below the lip regardless of basket depth (a "taller"
-basket is simply a higher dose rating). Basket choice therefore does **not**
-move the lip-to-screen distance. Decisively: the basket, dose, grind and
-portafilter were **identical on both groups** — so the basket cannot explain
-the *difference*. The only thing that changed is the group.
+**Root cause — bayonet-pattern mismatch.** The basket lip sits at the
+portafilter's top rim; you dose *to the basket*, so the puck top lands just
+below the lip regardless of basket depth (a "taller" basket is just a higher
+dose rating). Basket choice does **not** move the lip-to-screen distance —
+and the basket/dose/grind/portafilter were identical on both groups, so the
+basket cannot explain the difference. The variable is the group.
 
-With the portafilter unchanged, the variable is **how the portafilter ears
-seat against the group's bayonet** — that geometry sets the basket-lip-to-
-shower-screen distance. The Silvia portafilter's ears were cut for the
-Silvia group; in the Ascaso group they "fit" (lock in) but seat the basket
-lip farther from the screen → the massive headspace, which then drives the
-channeling (water pools in the void, hits the puck unevenly on pressure
-build).
+The Ascaso 58 mm group is an **E61-bayonet** group (every aftermarket
+"58 mm E61" portafilter lists Ascaso as compatible). The Rancilio Silvia
+portafilter is **not E61** — the Silvia has its own Rancilio group/bayonet.
+The Silvia PF locks into the Ascaso E61 group because the patterns are
+*close*, but it does not seat at the E61-correct height → basket lip too far
+from the shower screen → the massive headspace, which then drives the
+channeling.
 
-**Fix path (in order):**
-1. **Free confirming test:** lock in the **Ascaso stock (spouted)
-   portafilter** that shipped with the machine — its ears are matched to the
-   Ascaso group. Tamp a normal dose, place a coin on the puck, lock in,
-   remove, inspect. A proper witness mark with the Ascaso PF (and none with
-   the Silvia PF) confirms the portafilter geometry is the cause.
-2. **Real fix:** use an **Ascaso-matched portafilter**. For bottomless
-   channeling diagnostics, get an Ascaso bottomless portafilter, or convert
-   an Ascaso spouted PF (cut/machine the spouts off). An aftermarket
-   "58 mm E61" bottomless PF may lock into the Ascaso group but is **not
-   guaranteed to seat at the right height** — its ears are E61-pattern, the
-   same mismatch family as the Silvia PF.
-3. **Group gasket** thickness is a real but small lever (~0.5–2 mm): a
-   thinner group gasket lets the PF seat higher → less headspace. Worth a
-   try if the residual gap after a matched PF is minor; won't cover a
-   *massive* gap alone.
-4. **Puck screen** supplements once headspace is in a normal range — bridges
-   only 1.5–3 mm.
-5. Verify the Ascaso group is 58 mm (some Ascaso groups are 57 mm; the
-   Silvia 58 mm PF locking in suggests this one is 58).
+**Fix — cheap, not the $300 OEM:**
+1. **Buy a 58 mm E61 bottomless portafilter** (~$20–50: KNODOS, Normcore
+   Lay-Flat, Lastaforest, generic eBay — all list Ascaso compatibility).
+   E61-pattern = matches the Ascaso E61 group's seating. Bottomless also
+   gives the channeling diagnostics. The genuine Ascaso PF (~$300) is not
+   needed.
+2. **Verify the group gasket.** This build used a parts-only Ascaso group —
+   confirm the group-head gasket is installed and the right one. Ascaso
+   58 mm gaskets: **7.8 mm** (Dream PID + all Steel), **8.3 mm** (Bar
+   2012-15, Steel Uno/Duo/Trio ~2016+), 8.5 mm old, 5.0 mm pre-2009. The
+   portafilter seats against this gasket — wrong/missing gasket is itself a
+   seating-height error. The 7.8↔8.3 spread is also a ~0.5 mm fine-tune.
+3. **Puck screen** supplements once headspace is in normal range (1.5–3 mm).
 
-Basket size/depth stays a free choice — just dose to whatever basket you
-run. Scale re-check before grinding is still a cheap sanity item. But the
-single-variable evidence puts this squarely on the **portafilter ↔ Ascaso-
-group ear/bayonet geometry**.
+Basket size/depth stays a free choice — dose to whatever basket you run.
+Scale re-check before grinding remains a cheap sanity item.
 
 ### 3.6 Build order
 
@@ -536,14 +526,14 @@ brews are reproducible.
 
 ## 6. Revision log
 
-- **2026-05-22 (01:57)**: §3.5 corrected again — the headspace cause is the
-  **portafilter**, not the basket. You dose to the basket, so basket depth
-  doesn't move the lip-to-screen distance; and the basket/dose were
-  identical on both groups, so the basket can't explain the difference. The
-  variable is the portafilter-ear ↔ group-bayonet seating geometry. Fix is
-  an Ascaso-matched portafilter; confirm free with the Ascaso stock PF.
-- **2026-05-22 (01:50)**: §3.5 basket-depth note (later superseded — see
-  the entry above).
+- **2026-05-22 (02:03)**: §3.5 headspace diagnosis finalised — **bayonet-
+  pattern mismatch**. The Ascaso 58 mm group is E61-bayonet; the Rancilio
+  Silvia portafilter is Rancilio-pattern, not E61. The Silvia PF locks in
+  but seats at the wrong height → massive headspace → channeling. Fix: a
+  ~$30 aftermarket 58 mm E61 bottomless portafilter (not the $300 Ascaso
+  OEM, not the Silvia PF) + the correct Ascaso group gasket (7.8 mm for
+  Steel/Dream PID). Earlier basket-depth theories in this section's history
+  were wrong — basket is irrelevant; you dose to the basket.
 - **2026-05-22 (00:36)**: §3 added — light-roast profile plan, minimal
   profile-engine design, Blooming Allongé spec for our hardware, and the
   Ascaso-group headspace/basket mismatch diagnostic. Old JSON-profile-system
