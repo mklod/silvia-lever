@@ -13,8 +13,12 @@
 #define PUMP_ENA_PIN     3   // Optoisolator enable — HIGH to pass PWM to motor driver
 
 // ─── Heaters (two separate SSRs) ─────────────────────────────────────────────
-#define HEATER_BREW_PIN  15  // Thermoblock SSR (brew / PID controlled)
-#define HEATER_STEAM_PIN 16  // Steam boiler SSR (thermostat controlled)
+#define HEATER_BREW_PIN  15  // Thermoblock SSR (brew / PID) — pin 15 IS PWM-capable
+#define HEATER_STEAM_PIN 16  // Steam boiler SSR (on/off thermostat). NOTE: Teensy
+                             // 4.0 pin 16 is NOT PWM-capable (PWM pins: 0–15,
+                             // 18–19, 22–25, 28–29, 33–39). The boiler is on/off
+                             // anyway, so firmware drives it with digitalWrite —
+                             // analogWrite() on pin 16 is a silent no-op.
 
 // ─── 3-Way Valves ────────────────────────────────────────────────────────────
 // VALVE1 (VALVE_PUMP): de-energised → pump → thermoblock (default, heaviest duty)

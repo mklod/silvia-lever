@@ -1,4 +1,4 @@
-// Last modified: 2026-05-29--0126
+// Last modified: 2026-05-29--1638
 /*
  * Silvia Lever Coffee Machine Controller
  * Hardware revision: dual PT1000 (MAX31865), dual SSR heaters,
@@ -296,7 +296,7 @@ void setup() {
   pinMode(PUMP_ENA_PIN,          OUTPUT); digitalWrite(PUMP_ENA_PIN, LOW);   // Pump gated OFF at boot
   pinMode(PUMP_PWM_PIN,          OUTPUT); analogWrite(PUMP_PWM_PIN, 0);
   pinMode(HEATER_BREW_PIN,       OUTPUT); analogWrite(HEATER_BREW_PIN, 0);
-  pinMode(HEATER_STEAM_PIN,      OUTPUT); analogWrite(HEATER_STEAM_PIN, 0);
+  pinMode(HEATER_STEAM_PIN,      OUTPUT); digitalWrite(HEATER_STEAM_PIN, LOW);
   pinMode(VALVE_PUMP_PIN,        OUTPUT); digitalWrite(VALVE_PUMP_PIN, LOW);
   pinMode(VALVE_THERMOBLOCK_PIN, OUTPUT); digitalWrite(VALVE_THERMOBLOCK_PIN, LOW);
   sys.state = STATE_IDLE;
@@ -596,7 +596,7 @@ void processSerialCommands() {
     if (!sys.heatersEnabled) {
       // Kill both SSRs immediately — don't wait for next PID tick
       analogWrite(HEATER_BREW_PIN,  0);
-      analogWrite(HEATER_STEAM_PIN, 0);
+      digitalWrite(HEATER_STEAM_PIN, LOW);
       sys.heaterBrewOn  = false;
       sys.heaterSteamOn = false;
     }
@@ -838,7 +838,7 @@ void arbitrateHeaters() {
   // Prime gate — no heating of any kind until the boiler tank is confirmed full.
   if (!sys.boilerPrimed) {
     analogWrite(HEATER_BREW_PIN, 0);  sys.heaterBrewOn  = false;
-    analogWrite(HEATER_STEAM_PIN, 0); sys.heaterSteamOn = false;
+    digitalWrite(HEATER_STEAM_PIN, LOW); sys.heaterSteamOn = false;
     return;
   }
 
@@ -874,7 +874,7 @@ void arbitrateHeaters() {
   if (!sys.heaterBrewOn) {
     controlSteamHeater();              // boiler free to heat this tick
   } else {
-    analogWrite(HEATER_STEAM_PIN, 0);  // thermoblock won the tick — hold boiler off
+    digitalWrite(HEATER_STEAM_PIN, LOW);  // thermoblock won the tick — hold boiler off
     sys.heaterSteamOn = false;
   }
 }
@@ -1214,7 +1214,7 @@ void controlBrewHeater() {
 // Simple thermostat for the steam boiler
 void controlSteamHeater() {
 #ifdef COLD_TEST_MODE
-  analogWrite(HEATER_STEAM_PIN, 0);
+  digitalWrite(HEATER_STEAM_PIN, LOW);
   sys.heaterSteamOn = false;
   return;
 #endif
@@ -1225,7 +1225,7 @@ void controlSteamHeater() {
   float target = sys.steamTemp + STEAM_PREHEAT_OVERSHOOT;
 
   if (actual >= MAX_STEAM_TEMP) {
-    analogWrite(HEATER_STEAM_PIN, 0);
+    digitalWrite(HEATER_STEAM_PIN, LOW);
     sys.heaterSteamOn = false;
     return;
   }
@@ -1235,7 +1235,7 @@ void controlSteamHeater() {
     : (actual < target - STEAM_HYSTERESIS);
 
   if (!sys.heatersEnabled) shouldHeat = false;
-  analogWrite(HEATER_STEAM_PIN, shouldHeat ? HEATER_PWM_FULL : 0);
+  digitalWrite(HEATER_STEAM_PIN, shouldHeat ? HIGH : LOW);
   sys.heaterSteamOn = shouldHeat;
 }
 
@@ -1296,7 +1296,7 @@ void safeOff() {
   digitalWrite(PUMP_ENA_PIN,    LOW);   // Gate pump OFF first
   analogWrite(PUMP_PWM_PIN,     0);
   analogWrite(HEATER_BREW_PIN,  0);
-  analogWrite(HEATER_STEAM_PIN, 0);
+  digitalWrite(HEATER_STEAM_PIN, LOW);
   setValve(VALVE_THERMOBLOCK_PIN, false);  // thermoblock → drain
   setValve(VALVE_PUMP_PIN,        false);  // V1 LOW (de-energised); pump is off so routing doesn't matter
   sys.heaterBrewOn  = false;
