@@ -9,6 +9,7 @@
 > - PID tuning once thermoblock has reached setpoint a few times
 > - Profile system (Stage 8) after a few weeks of real-world use
 > - Autostart silvia on RPi boot (systemd user unit or labwc-pi autostart) so no tap needed at power-on
+> - **UI access to scale calibration + PID autotune** (deferred): these were intentionally pulled out of the home flow (gauge tap now opens a per-loop setpoint popup only). Need a discreet way back to them — e.g. a long-press on a gauge, a hidden corner tap, or a gear icon → the existing `settingsScreen`. Decide the gesture and wire it.
 > - **RC filter on the pump pot** (low priority now): adds analog smoothing to the pot reading. Less urgent than thought — manual takeover under the profile engine already feels responsive and smooth, noticeably better than plain manual mode. Revisit only if pot jitter shows up in a brew log.
 > - **Pi undervoltage during Teensy flash / silvia restart** (low priority): brief brownouts drop the Pi off-network mid-flash. 5V cable + supply are good; stable during normal runtime, so not a real concern operationally. Likely USB-port inrush when the Teensy re-enumerates, not the rail. Flashing recovers fine. Investigate (vcgencmd get_throttled, try powering Teensy separately) only if it becomes disruptive.
 
