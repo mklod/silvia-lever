@@ -54,6 +54,8 @@ ApplicationWindow {
     property int profileIndex: 0        // active brew profile index
     property bool boilerPrimed: false   // boiler tank filled (dry-fire gate)
     property bool boilerPreheated: false // boiler first reached steam temp
+    // Per-gauge setpoint popup: "" = hidden, "brew" = thermoblock, "steam" = boiler.
+    property string setpointPopup: ""
     // Priming overlay visibility — driven by the home-screen button tap.
     // Decoupled from firmware state so the overlay can be shown BEFORE
     // the user taps START and hangs around until they explicitly dismiss.
@@ -310,6 +312,116 @@ ApplicationWindow {
         onClicked: Qt.quit()
     }
 
+    // ── Per-gauge setpoint popup ───────────────────────────────────────────
+    // Tap a home-screen gauge → adjust ONLY that loop's setpoint. Thermoblock
+    // (brew) 60–110 °C, steam boiler 110–150 °C. Scale calibration + PID tune
+    // are intentionally NOT here (see settingsScreen). −/+ apply immediately.
+    Rectangle {
+        id: setpointOverlay
+        anchors.fill: parent
+        z: 1500
+        visible: window.setpointPopup !== ""
+        color: Qt.rgba(0, 0, 0, 0.82)
+
+        property bool isSteam: window.setpointPopup === "steam"
+        property real curVal: isSteam ? window.steamTargetTemp : window.brewTargetTemp
+
+        // Tap outside the card dismisses.
+        MouseArea { anchors.fill: parent; onClicked: window.setpointPopup = "" }
+
+        Rectangle {
+            anchors.centerIn: parent
+            width: 420
+            height: spCol.implicitHeight + 64
+            color: "#16191e"
+            radius: 18
+            border.color: setpointOverlay.isSteam ? "#e67e22" : "#2290e7"
+            border.width: 2
+            MouseArea { anchors.fill: parent }  // swallow taps inside the card
+
+            ColumnLayout {
+                id: spCol
+                anchors.centerIn: parent
+                width: parent.width - 56
+                spacing: 22
+
+                Text {
+                    Layout.alignment: Qt.AlignHCenter
+                    text: setpointOverlay.isSteam ? "STEAM BOILER" : "THERMOBLOCK"
+                    color: setpointOverlay.isSteam ? "#e67e22" : "#2290e7"
+                    font { pixelSize: 20; bold: true; letterSpacing: 1 }
+                }
+                Text {
+                    Layout.alignment: Qt.AlignHCenter
+                    text: "Target temperature"
+                    color: "#8a93a0"; font.pixelSize: 14
+                }
+
+                RowLayout {
+                    Layout.alignment: Qt.AlignHCenter
+                    spacing: 28
+
+                    // −
+                    Rectangle {
+                        Layout.preferredWidth: 72; Layout.preferredHeight: 72
+                        radius: 36
+                        color: minusArea.pressed ? Qt.rgba(1,1,1,0.18) : "transparent"
+                        border.color: "#ffffff"; border.width: 1
+                        Text { anchors.centerIn: parent; text: "−"; color: "#ffffff"; font.pixelSize: 38 }
+                        MouseArea {
+                            id: minusArea
+                            anchors.fill: parent
+                            onClicked: {
+                                if (setpointOverlay.isSteam)
+                                    window.steamTargetTemp = Math.max(110.0, Math.round(window.steamTargetTemp - 1))
+                                else
+                                    window.brewTargetTemp = Math.max(60.0, Math.round(window.brewTargetTemp - 1))
+                                controller.setTemperatures(window.brewTargetTemp, window.steamTargetTemp)
+                            }
+                        }
+                    }
+
+                    Text {
+                        Layout.preferredWidth: 150
+                        horizontalAlignment: Text.AlignHCenter
+                        text: setpointOverlay.curVal.toFixed(0) + "°C"
+                        color: "#ffffff"; font { pixelSize: 48; bold: true }
+                    }
+
+                    // +
+                    Rectangle {
+                        Layout.preferredWidth: 72; Layout.preferredHeight: 72
+                        radius: 36
+                        color: plusArea.pressed ? Qt.rgba(1,1,1,0.18) : "transparent"
+                        border.color: "#ffffff"; border.width: 1
+                        Text { anchors.centerIn: parent; text: "+"; color: "#ffffff"; font.pixelSize: 36 }
+                        MouseArea {
+                            id: plusArea
+                            anchors.fill: parent
+                            onClicked: {
+                                if (setpointOverlay.isSteam)
+                                    window.steamTargetTemp = Math.min(150.0, Math.round(window.steamTargetTemp + 1))
+                                else
+                                    window.brewTargetTemp = Math.min(110.0, Math.round(window.brewTargetTemp + 1))
+                                controller.setTemperatures(window.brewTargetTemp, window.steamTargetTemp)
+                            }
+                        }
+                    }
+                }
+
+                Rectangle {
+                    Layout.alignment: Qt.AlignHCenter
+                    Layout.preferredWidth: 160; Layout.preferredHeight: 52
+                    radius: 10
+                    color: doneArea.pressed ? Qt.rgba(1,1,1,0.18) : "transparent"
+                    border.color: "#ffffff"; border.width: 1
+                    Text { anchors.centerIn: parent; text: "DONE"; color: "#ffffff"; font.pixelSize: 22 }
+                    MouseArea { id: doneArea; anchors.fill: parent; onClicked: window.setpointPopup = "" }
+                }
+            }
+        }
+    }
+
     // Toast — transient banner used for E-stop and other quick notifications.
     // Top-center, fades out after 2.5s.
     Rectangle {
@@ -493,7 +605,7 @@ ApplicationWindow {
                             }
                             MouseArea {
                                 anchors.fill: parent
-                                onClicked: stackView.push(settingsScreen)
+                                onClicked: window.setpointPopup = "brew"
                             }
                         }
 
@@ -586,7 +698,7 @@ ApplicationWindow {
                             }
                             MouseArea {
                                 anchors.fill: parent
-                                onClicked: stackView.push(settingsScreen)
+                                onClicked: window.setpointPopup = "steam"
                             }
                         }
 
