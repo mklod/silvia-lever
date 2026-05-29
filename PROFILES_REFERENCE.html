@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Silvia Lever — Profile Reference Sheet</title>
+<style>
+  :root{
+    --bg:#0d0f12; --panel:#16191e; --ink:#e9edf2; --dim:#8a93a0;
+    --line:#2a2f37; --accent:#3498db; --green:#27ae60; --amber:#e1a33b;
+    --pink:#d36ea8; --red:#e74c3c;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:15px/1.5 -apple-system,Segoe UI,Roboto,sans-serif;padding:28px}
+  h1{font-size:24px;margin:0 0 4px}
+  .sub{color:var(--dim);margin:0 0 24px;font-size:13px}
+  .legend{display:flex;gap:20px;flex-wrap:wrap;margin:0 0 24px;font-size:13px;color:var(--dim)}
+  .legend b{color:var(--ink)}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:14px;
+    padding:20px 22px;margin:0 0 22px}
+  .card h2{margin:0 0 2px;font-size:20px;display:flex;align-items:center;gap:10px}
+  .tag{font-size:11px;font-weight:700;padding:2px 8px;border-radius:20px;
+    background:#23272e;color:var(--dim);letter-spacing:.04em}
+  .aim{color:var(--dim);margin:2px 0 16px;font-size:13.5px}
+  .grid{display:grid;grid-template-columns:560px 1fr;gap:24px;align-items:start}
+  @media(max-width:980px){.grid{grid-template-columns:1fr}}
+  svg{width:100%;height:auto;display:block;background:#0f1216;border-radius:10px}
+  table{border-collapse:collapse;width:100%;font-size:13px}
+  th,td{text-align:left;padding:6px 9px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{color:var(--dim);font-weight:600;font-size:11.5px;text-transform:uppercase;letter-spacing:.04em}
+  td.n{font-variant-numeric:tabular-nums;white-space:nowrap}
+  .phase{font-weight:700}
+  .grindnote{margin-top:14px;font-size:13px;color:var(--amber)}
+  .grindnote b{color:var(--ink)}
+  .exit{color:var(--dim);font-size:12.5px}
+  code{background:#23272e;padding:1px 5px;border-radius:5px;font-size:12px}
+  .foot{color:var(--dim);font-size:12px;margin-top:8px;border-top:1px solid var(--line);padding-top:14px}
+  .note{background:#1a1d22;border-left:3px solid var(--accent);padding:10px 14px;
+    border-radius:6px;margin:0 0 24px;font-size:13px;color:var(--dim)}
+</style>
+</head>
+<body>
+<h1>Silvia Lever — Profile Reference Sheet</h1>
+<p class="sub">Generated from firmware segment tables · values mirror
+<code>silvia_lever_main.ino</code> / <code>config.h</code>. Use this to verify a
+brew's pressure curve against the design. Last updated 2026-05-28.</p>
+
+<div class="note">
+<b style="color:var(--ink)">How to read these.</b> The blue line is the
+<b>commanded pressure setpoint</b> over time — what the firmware aims for; the
+PI(D) loop drives the pump to track it. Preinfuse length is variable (it ends
+on first drips or a time cap), so it's drawn at a representative length and
+annotated. Pressure-gated and time-gated phase exits are marked. The setpoint
+slews continuously between phases at the listed ramp rate (bar/sec); it does
+not jump.
+</div>
+
+<div class="legend">
+  <span><b style="color:var(--accent)">━</b> pressure setpoint (bar)</span>
+  <span><b>FILL/RAMP</b> setpoint rising</span>
+  <span><b>BLOOM/PREINFUSE</b> low-pressure soak</span>
+  <span><b>HOLD</b> steady</span>
+  <span><b>DECLINE</b> taper down</span>
+  <span>↓ = ends on first drips / weight · ⏱ = time cap · ⤒ = pressure target</span>
+</div>
+
+<div id="cards"></div>
+
+<script>
+/* ── Profile definitions — mirror the firmware segment arrays ──────────────
+   Each phase: {name, color, pts:[[t,bar],...], detail:{target,ramp,time,exit}}
+   pts are the setpoint vertices (t seconds, bar). Continuous across phases.
+   Constants: PREINFUSE 1.0 bar (exit 1g OR 10s) · BREW_TARGET 9.0 ·
+   default slew 0.8 bar/s. Representative preinfuse/hold lengths used for
+   drawing are noted in each phase's exit text.                              */
+
+const C = {fill:'#3498db', bloom:'#d36ea8', ramp:'#3498db', hold:'#27ae60', decline:'#e1a33b'};
+
+const PROFILES = [
+{
+  name:"Standard 9-bar", tag:"medium / dark · everyday",
+  aim:"Classic balanced espresso. Gentle wet, climb to 9 bar, hold.",
+  grind:"Normal espresso grind. ~1:2 in 25–35 s.",
+  pts:[[0,0],[0.5,1],[6,1],[16,9],[28,9]],
+  phases:[
+    {name:"PREINFUSE", color:C.bloom, target:"1.0 bar", ramp:"2.0 bar/s in",
+     time:"≈0.5 s ramp, then soak", exit:"first drips (≥1 g) — or 10 s cap"},
+    {name:"RAMP", color:C.ramp, target:"9.0 bar", ramp:"0.8 bar/s",
+     time:"1 → 9 bar takes 10 s", exit:"setpoint reaches 9 bar"},
+    {name:"HOLD", color:C.hold, target:"9.0 bar", ramp:"—",
+     time:"indefinite", exit:"user STOP (or turn pot to take over)"},
+  ],
+},
+{
+  name:"Gentle & Sweet", tag:"light–medium · sweeter",
+  aim:"Softer, sweeter, less channeling. Same wet, then a flat 6 bar hold.",
+  grind:"Coarser than standard — 6 bar flows slower; fine grind will choke it.",
+  pts:[[0,0],[0.5,1],[6,1],[12.25,6],[24,6]],
+  phases:[
+    {name:"PREINFUSE", color:C.bloom, target:"1.0 bar", ramp:"2.0 bar/s in",
+     time:"≈0.5 s ramp, then soak", exit:"first drips (≥1 g) — or 10 s cap"},
+    {name:"RAMP", color:C.ramp, target:"6.0 bar", ramp:"0.8 bar/s",
+     time:"1 → 6 bar takes 6.25 s", exit:"setpoint reaches 6 bar"},
+    {name:"HOLD", color:C.hold, target:"6.0 bar", ramp:"—",
+     time:"indefinite", exit:"user STOP / pot takeover"},
+  ],
+},
+{
+  name:"Blooming Allongé", tag:"ultra-light · fruity · max clarity",
+  aim:"Long, thin, tea-like, super-clean. The one for fruity/floral light roasts. Fill → bloom soak → moderate push → slow taper.",
+  grind:"Fine, long ratio (1:3+). Expect a longer, light-bodied shot.",
+  pts:[[0,0],[2.25,4.5],[4.58,1.0],[12,1.0],[17,5.0],[29.5,3.5],[40,3.5]],
+  phases:[
+    {name:"FILL", color:C.fill, target:"4.5 bar", ramp:"2.0 bar/s",
+     time:"≈2.25 s", exit:"pressure ≥ 4 bar ⤒ — or 4 s cap ⏱"},
+    {name:"BLOOM", color:C.bloom, target:"1.0 bar", ramp:"1.5 bar/s down",
+     time:"≈2.3 s drop, then soak", exit:"≥ 4 g in cup ↓ — or 10 s cap ⏱"},
+    {name:"PERCOLATE", color:C.ramp, target:"6.0 bar", ramp:"0.8 bar/s",
+     time:"5 s (caps before reaching 6)", exit:"5 s cap ⏱ — or pressure ≥ 5.5 bar ⤒ (≈5 bar at cap)"},
+    {name:"DECLINE", color:C.decline, target:"3.5 bar", ramp:"0.12 bar/s down",
+     time:"≈12.5 s taper to 3.5, then hold", exit:"user STOP / pot takeover"},
+  ],
+},
+{
+  name:"Blooming Espresso", tag:"light–medium · clarity + body",
+  aim:"A bloom for evenness, then full 9 bar for richness. More body than the Allongé, cleaner than Standard.",
+  grind:"Medium-fine, ~1:2 to 1:2.5.",
+  pts:[[0,0],[3.25,6.5],[6.25,2],[12,2],[20.75,9],[32,9]],
+  phases:[
+    {name:"FILL", color:C.fill, target:"6.5 bar", ramp:"2.0 bar/s",
+     time:"≈3.25 s", exit:"pressure ≥ 6 bar ⤒ — or 4 s cap ⏱"},
+    {name:"BLOOM", color:C.bloom, target:"2.0 bar", ramp:"1.5 bar/s down",
+     time:"≈3 s drop, then soak", exit:"≥ 4 g in cup ↓ — or 8 s cap ⏱"},
+    {name:"RAMP", color:C.ramp, target:"9.0 bar", ramp:"0.8 bar/s",
+     time:"2 → 9 bar takes 8.75 s", exit:"setpoint reaches 9 bar"},
+    {name:"HOLD", color:C.hold, target:"9.0 bar", ramp:"—",
+     time:"indefinite", exit:"user STOP / pot takeover"},
+  ],
+},
+{
+  name:"Allongé", tag:"light · forgiving fallback",
+  aim:"Simple high-clarity long shot. The fallback when blooming profiles channel or taste harsh.",
+  grind:"Coarser, long ratio (1:3–1:5), ~30 s.",
+  pts:[[0,0],[0.5,1],[6,1],[11,5],[24,5]],
+  phases:[
+    {name:"PREINFUSE", color:C.bloom, target:"1.0 bar", ramp:"2.0 bar/s in",
+     time:"≈0.5 s ramp, then soak", exit:"first drips (≥1 g) — or 10 s cap"},
+    {name:"RAMP", color:C.ramp, target:"5.0 bar", ramp:"0.8 bar/s",
+     time:"1 → 5 bar takes 5 s", exit:"setpoint reaches 5 bar"},
+    {name:"HOLD", color:C.hold, target:"5.0 bar", ramp:"—",
+     time:"indefinite", exit:"user STOP / pot takeover"},
+  ],
+},
+];
+
+/* ── SVG renderer ─────────────────────────────────────────────────────── */
+function svgFor(p){
+  const W=560,H=260, mL=44,mR=14,mT=16,mB=34;
+  const maxT=Math.max(...p.pts.map(q=>q[0]));
+  const maxBar=10;
+  const x=t=> mL + t/maxT*(W-mL-mR);
+  const y=b=> mT + (1-b/maxBar)*(H-mT-mB);
+  let s=`<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">`;
+  // gridlines + y labels (bar)
+  for(let b=0;b<=10;b+=2){
+    s+=`<line x1="${mL}" y1="${y(b)}" x2="${W-mR}" y2="${y(b)}" stroke="#23272e" stroke-width="1"/>`;
+    s+=`<text x="${mL-6}" y="${y(b)+4}" fill="#8a93a0" font-size="10" text-anchor="end">${b}</text>`;
+  }
+  // x labels (time)
+  for(let t=0;t<=maxT;t+=Math.ceil(maxT/8/5)*5||5){
+    s+=`<text x="${x(t)}" y="${H-mB+16}" fill="#8a93a0" font-size="10" text-anchor="middle">${t}s</text>`;
+  }
+  s+=`<text x="${mL-30}" y="${mT+8}" fill="#8a93a0" font-size="10">bar</text>`;
+  // phase shading bands — derive band edges from pts indices per phase count
+  // We shade by walking pts: each phase spans from its start vertex to next.
+  // Map: phase i covers pts segment(s); compute boundaries from a per-phase
+  // end-time list built from the curve's "knees".
+  // Boundary times = the t of each interior vertex that starts a hold/turn.
+  const bands = bandTimes(p);
+  bands.forEach((bd,i)=>{
+    const ph=p.phases[i]; if(!ph) return;
+    const x0=x(bd[0]), x1=x(bd[1]);
+    s+=`<rect x="${x0}" y="${mT}" width="${x1-x0}" height="${H-mT-mB}" fill="${ph.color}" opacity="0.07"/>`;
+    s+=`<text x="${(x0+x1)/2}" y="${mT+12}" fill="${ph.color}" font-size="9.5" font-weight="700" text-anchor="middle" opacity="0.85">${ph.name}</text>`;
+    if(i>0) s+=`<line x1="${x0}" y1="${mT}" x2="${x0}" y2="${H-mB}" stroke="${ph.color}" stroke-width="1" stroke-dasharray="3 3" opacity="0.4"/>`;
+  });
+  // setpoint polyline
+  const pts=p.pts.map(q=>`${x(q[0])},${y(q[1])}`).join(' ');
+  s+=`<polyline points="${pts}" fill="none" stroke="#3498db" stroke-width="2.5" stroke-linejoin="round"/>`;
+  // vertices
+  p.pts.forEach(q=>{ s+=`<circle cx="${x(q[0])}" cy="${y(q[1])}" r="2.6" fill="#3498db"/>`; });
+  // "→ STOP" tail marker
+  const last=p.pts[p.pts.length-1];
+  s+=`<text x="${x(last[0])-2}" y="${y(last[1])-8}" fill="#8a93a0" font-size="9.5" text-anchor="end">… until STOP</text>`;
+  s+=`</svg>`;
+  return s;
+}
+
+/* Build phase band [startT,endT] list from the pts + phase count.
+   Heuristic: split the time axis at the vertices that mark phase changes.
+   For an n-phase profile we use the vertices after the initial ramp as the
+   knees. We encode it simply: phases end at the t of specific pts indices. */
+function bandTimes(p){
+  // Hand-mapped knee indices per profile shape (kept tiny + explicit).
+  const map={
+    "Standard 9-bar":   [[0,6],[6,16],[16, p.pts.at(-1)[0]]],
+    "Gentle & Sweet":   [[0,6],[6,12.25],[12.25,p.pts.at(-1)[0]]],
+    "Blooming Allongé": [[0,2.25],[2.25,12],[12,17],[17,p.pts.at(-1)[0]]],
+    "Blooming Espresso":[[0,3.25],[3.25,12],[12,20.75],[20.75,p.pts.at(-1)[0]]],
+    "Allongé":          [[0,6],[6,11],[11,p.pts.at(-1)[0]]],
+  };
+  return map[p.name];
+}
+
+/* ── Render cards ─────────────────────────────────────────────────────── */
+const host=document.getElementById('cards');
+PROFILES.forEach(p=>{
+  let rows=p.phases.map(ph=>`<tr>
+     <td class="phase" style="color:${ph.color}">${ph.name}</td>
+     <td class="n">${ph.target}</td>
+     <td class="n">${ph.ramp}</td>
+     <td class="n">${ph.time}</td>
+     <td class="exit">${ph.exit}</td></tr>`).join('');
+  host.insertAdjacentHTML('beforeend',`
+   <div class="card">
+     <h2>${p.name} <span class="tag">${p.tag}</span></h2>
+     <div class="aim">${p.aim}</div>
+     <div class="grid">
+       <div>${svgFor(p)}</div>
+       <div>
+         <table>
+           <tr><th>Phase</th><th>Target</th><th>Ramp</th><th>Timing</th><th>Exits when</th></tr>
+           ${rows}
+         </table>
+         <div class="grindnote"><b>Grind:</b> ${p.grind}</div>
+       </div>
+     </div>
+   </div>`);
+});
+</script>
+
+<p class="foot">
+Setpoint = what the firmware commands; actual puck pressure tracks it via the
+PI(D) pump loop (may lag/overshoot slightly on very fine grinds). Phase exits
+fire on the <b>first</b> criterion met. "Pot takeover": rotate the pump knob
+&gt;10 % mid-shot and control hands to you bumplessly. Full engineering detail
+in <code>PROFILES.md</code>; quick picker in <code>PROFILES_CHEATSHEET.md</code>.
+</p>
+</body>
+</html>
