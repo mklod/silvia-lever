@@ -491,7 +491,10 @@ ApplicationWindow {
                             onClicked: {
                                 window.brewTime = "00:00"
                                 controller.heatBrew()           // kick thermoblock heating
-                                window.brewPrimingOpen = true   // offer optional priming
+                                // Priming popup removed 2026-05-22 — the
+                                // thermoblock is effectively always primed in
+                                // normal use; prime manually with FLUSH if ever
+                                // needed.
                                 stackView.push(brewScreen)
                             }
                         }
@@ -786,126 +789,11 @@ ApplicationWindow {
         Rectangle {
             color: "#000000"
 
-            // ── Priming overlay ────────────────────────────────────────────
-            // Shown when user taps BREW on home screen; START/STOP toggle
-            // mirrors flush button style. X dismisses the overlay (and
-            // aborts + pops back to home if priming was already in progress).
-            Rectangle {
-                anchors.fill: parent
-                z: 10
-                visible: window.brewPrimingOpen
-                color: Qt.rgba(0, 0, 0, 0.80)
-
-                Rectangle {
-                    anchors.centerIn: parent
-                    width: Math.min(parent.width - 40, 420)
-                    height: brewPrimingCol.implicitHeight + 80
-                    color: Qt.rgba(1, 1, 1, 0.08)
-                    radius: 18
-                    border.color: "#3498db"
-                    border.width: 2
-
-                    // X close button — top right
-                    Rectangle {
-                        width: 40; height: 40
-                        radius: 20
-                        anchors.top: parent.top
-                        anchors.right: parent.right
-                        anchors.margins: 8
-                        color: brewPrimeCloseArea.pressed ? "#555555" : "transparent"
-                        border.color: "#bbbbbb"
-                        border.width: 1
-                        Text {
-                            anchors.centerIn: parent
-                            text: "×"
-                            color: "#ffffff"
-                            font { pixelSize: 24; bold: true }
-                        }
-                        MouseArea {
-                            id: brewPrimeCloseArea
-                            anchors.fill: parent
-                            onClicked: {
-                                if (window.currentState === "PRIMING_BREW") {
-                                    controller.stopBrew()
-                                }
-                                window.brewPrimingOpen = false
-                                // Stay on the brew screen — user can use the
-                                // top-left back arrow to return to home.
-                            }
-                        }
-                    }
-
-                    ColumnLayout {
-                        id: brewPrimingCol
-                        anchors.centerIn: parent
-                        width: parent.width - 56
-                        spacing: 18
-
-                        Text {
-                            Layout.alignment: Qt.AlignHCenter
-                            text: "PRIMING THERMOBLOCK"
-                            color: "#3498db"
-                            font { pixelSize: 22; bold: true }
-                        }
-
-                        Text {
-                            Layout.fillWidth: true
-                            Layout.alignment: Qt.AlignHCenter
-                            text: "Tap START to begin pumping water through the thermoblock.\n" +
-                                  "Watch the group head outlet. Tap STOP once you see water."
-                            color: "#dddddd"
-                            font.pixelSize: 15
-                            wrapMode: Text.WordWrap
-                            horizontalAlignment: Text.AlignHCenter
-                            lineHeight: 1.4
-                        }
-
-                        Rectangle {
-                            Layout.alignment: Qt.AlignHCenter
-                            width: 12; height: 12; radius: 6
-                            color: "#3498db"
-                            visible: window.currentState === "PRIMING_BREW"
-                            SequentialAnimation on opacity {
-                                loops: Animation.Infinite
-                                NumberAnimation { to: 0.2; duration: 600 }
-                                NumberAnimation { to: 1.0; duration: 600 }
-                            }
-                        }
-
-                        // START / STOP toggle
-                        Rectangle {
-                            id: brewPrimeToggle
-                            Layout.alignment: Qt.AlignHCenter
-                            width: 280; height: 68
-                            radius: 16
-                            property bool priming: window.currentState === "PRIMING_BREW"
-                            color: brewPrimeToggle.priming
-                                ? (brewPrimeToggleArea.pressed ? "#922b21" : "#e74c3c")
-                                : (brewPrimeToggleArea.pressed ? "#1a6b38" : "#27ae60")
-
-                            Text {
-                                anchors.centerIn: parent
-                                text: brewPrimeToggle.priming ? "STOP — OVERFLOW SEEN" : "START PRIMING"
-                                color: "white"
-                                font { pixelSize: 17; bold: true }
-                            }
-                            MouseArea {
-                                id: brewPrimeToggleArea
-                                anchors.fill: parent
-                                onClicked: {
-                                    if (brewPrimeToggle.priming) {
-                                        controller.primeDone()
-                                        window.brewPrimingOpen = false  // auto-dismiss
-                                    } else {
-                                        controller.startBrew()
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            // ── End priming overlay ────────────────────────────────────────
+            // ── Priming overlay removed 2026-05-22 ─────────────────────────
+            // The thermoblock is effectively always primed in normal use, so
+            // the always-on prime popup on brew-tap was just friction. Prime
+            // manually with the FLUSH button if the machine has been sitting
+            // dry. (brewPrimingOpen property retained but never set true.)
 
             // ── Back arrow — top-left, matches settings screen style ─────
             Item {
