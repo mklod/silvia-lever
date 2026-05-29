@@ -3,6 +3,16 @@
 ## Current milestone
 **Alpha — thermoblock PID tuned.** First successful autotune complete (Kp/Ki/Kd = 46.94/0.516/3155.89, TL rule). Derivative-on-measurement + low-pass filter added. Boiler still disabled for single-heater focus; S9.7b measured (1.51 A avg maintenance) → Stage 9 concurrent heating unblocked on measurement side, pending implementation.
 
+## Session 2026-05-29 (01:26) — Stage 9 boiler implemented (branch boiler-stage9, pre-hot-test)
+- **Fallback locked first:** tag `brew-only-stable` (master HEAD) + fallback hex saved locally and on Pi 1 at `/home/gram/silvia_fw_BREWONLY_FALLBACK.hex`. Boiler work is on branch `boiler-stage9`; master stays brew-only for morning coffee. To restore brew-only: `git checkout brew-only-stable`, or reflash the fallback hex.
+- **Boiler enabled, task-switch model (brew XOR steam), firmware only — no current-monitor hardware** (user deferred the CT-clamp idea indefinitely).
+  - Dry-fire prime gate: `boilerPrimed` (RAM). `arbitrateHeaters()` blocks all heating until primed. Prime = cold-fill (PRIME_BOILER → overflow → PRIME_DONE).
+  - `arbitrateHeaters()`: steaming → thermoblock HARD CUT, boiler active; cold-start → boiler first, thermoblock inhibited until boiler at target; brew/idle → thermoblock active, boiler maintenance only on ticks thermoblock didn't fire (1-tick mutex → ≤8.3 A always).
+  - Steam target = steamTemp + 5 °C overshoot. Telemetry +2 fields (boilerPrimed, boilerPreheatComplete). New PRIME_BOILER cmd; BEGIN_STEAM requires primed.
+- **UI home reorg:** removed logo + CONNECTED text; two gauges side by side (THERMOBLOCK left w/ BREW+FLUSH, STEAM BOILER right w/ STEAM+PRIME); PRIME glows amber until primed; STEAM disabled until primed.
+- **Validated:** firmware compiles (52504 B, hex at L:/tmp-pi-flash/build-boiler/); QML loads headless offscreen+mock, no parse errors, braces balanced.
+- **NOT done:** hot test, Teensy flash, Pi deploy — all deferred to a supervised session so morning-coffee fallback stays intact. Next: flash boiler-stage9 + deploy UI + supervised hot test (prime → preheat → steam → brew, clamp-meter ≤8.3 A).
+
 ## Session 2026-05-22 (13:19) — light-roast profiles + debug-row cleanup
 - Added 3 profiles (5 total): Blooming Allongé (4-seg: fill→bloom→percolate→declining taper — the fruity-light-roast profile), Blooming Espresso (3-seg), Allongé (2-seg). All from PROFILES.md §3.3/§3.4. Compiled, flashed, GET_PROFILES confirms all 5.
 - Debug row: removed V1/V2 valve cells (water flow + valves verified working). Row now: heat, brew mode, profile, scale, pressure, pump.

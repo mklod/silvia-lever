@@ -1,11 +1,11 @@
-// Last modified: 2026-05-22--1317
+// Last modified: 2026-05-29--0126
 /*
  * Silvia Lever Coffee Machine Controller
  * Hardware revision: dual PT1000 (MAX31865), dual SSR heaters,
  * dual 3-way valves, NAU7802 scale, ADS1115 pressure sensor, single pump.
  *
  * Serial telemetry (every TELEMETRY_INTERVAL ms):
- *   DATA:state,brewTemp,steamTemp,pressure,weight,pump%,valveThermoblock,valvePump,heaterBrew,heaterSteam,brewTimer,scalesTared,heatersEnabled,brewPhase
+ *   DATA:state,brewTemp,steamTemp,pressure,weight,pump%,valveThermoblock,valvePump,heaterBrew,heaterSteam,brewTimer,scalesTared,heatersEnabled,brewPhase,boilerPrimed,boilerPreheatComplete
  *
  * Commands accepted from PC:
  *   SET_TEMP BREW <°C>     SET_TEMP STEAM <°C>
@@ -156,6 +156,14 @@ struct SystemData {
   // Runtime master switch for both SSRs. Default OFF so power-on never
   // starts heating; UI explicitly enables it before a hot test.
   bool heatersEnabled       = true;   // TEST MODE 2026-04-23: default ON; thermoblock seeks setpoint from boot
+  // Boiler dry-fire safety + Stage-9 staging (HEATING.md §5). boilerPrimed is
+  // RAM-only → false at every cold boot, so a fresh prime is required each
+  // power cycle before the boiler element can EVER energize. Until primed,
+  // NO heating happens at all (enforced in arbitrateHeaters). preheatComplete
+  // latches once the boiler first reaches its target, releasing the
+  // thermoblock from cold-start inhibition.
+  bool boilerPrimed         = false;
+  bool boilerPreheatComplete = false;
 
   // Brew timer (millis() timestamp of brew start; 0 = not brewing)
   unsigned long brewTimer = 0;
@@ -393,7 +401,10 @@ void processSerialCommands() {
       Serial.println("ERROR:NOT_IDLE");
     }
   }
-  else if (cmd == "START_STEAM") {
+  else if (cmd == "START_STEAM" || cmd == "PRIME_BOILER") {
+    // Boiler prime: fill the tank cold (pump → boiler → overflow). Best done
+    // at cold startup — cold-fill = filled, no steam purge needed. Sets
+    // boilerPrimed on PRIME_DONE, which unlocks all heating.
     if (sys.state == STATE_IDLE) {
       startPrimingSteam();
       Serial.println("OK:PRIMING_STEAM");
@@ -420,9 +431,14 @@ void processSerialCommands() {
       sys.state = STATE_HEATING_BREW;
       Serial.println("OK:BREW_PRIMED_HEATING");
     } else if (sys.state == STATE_PRIMING_STEAM) {
-      // V1 stays HIGH (pump→boiler) — nothing to change, just stop pump and heat
-      sys.state = STATE_HEATING_STEAM;
-      Serial.println("OK:STEAM_PRIMED_HEATING");
+      // Boiler tank confirmed full → unlock heating. Return to IDLE; the
+      // boiler then auto-preheats in the background via arbitrateHeaters
+      // (cold-start staging: boiler first, thermoblock inhibited until the
+      // boiler reaches its target). V1 drops LOW (pump idle routing).
+      setValve(VALVE_PUMP_PIN, false);
+      sys.boilerPrimed = true;
+      sys.state = STATE_IDLE;
+      Serial.println("OK:BOILER_PRIMED");
     } else {
       Serial.println("ERROR:NOT_PRIMING");
     }
@@ -462,9 +478,14 @@ void processSerialCommands() {
     }
   }
   else if (cmd == "BEGIN_STEAM") {
-    if (sys.state == STATE_HEATING_STEAM) {
+    // Enter active steaming from idle/heating. Boiler must be primed (dry-fire
+    // guard). Boiler has been preheating in the background; STEAMING gives it
+    // the full circuit and hard-cuts the thermoblock (arbitrateHeaters).
+    if (!sys.boilerPrimed) {
+      Serial.println("ERROR:BOILER_NOT_PRIMED");
+    } else if (sys.state == STATE_IDLE || sys.state == STATE_HEATING_STEAM
+               || sys.state == STATE_HEATING_BREW) {
       sys.state = STATE_STEAMING;
-      // No valve change — steam is delivered via the steam wand (no relay-controlled valve)
       Serial.println("OK:STEAMING_STARTED");
     } else {
       Serial.println("ERROR:INVALID_STATE_FOR_BEGIN_STEAM");
@@ -752,8 +773,7 @@ void updateSystemLogic() {
       break;
 
     case STATE_HEATING_STEAM:
-      // TEST MODE 2026-04-23: boiler heater disabled (controlSteamHeater
-      // not called). Pump off.
+      // Boiler heating handled by arbitrateHeaters() below. Pump parked.
       digitalWrite(PUMP_ENA_PIN, LOW);
       analogWrite(PUMP_PWM_PIN, 0);
       break;
@@ -777,7 +797,8 @@ void updateSystemLogic() {
       break;
 
     case STATE_STEAMING:
-      // TEST MODE 2026-04-23: boiler heater disabled.
+      // Active steam: boiler full-duty (arbitrateHeaters), thermoblock cut.
+      // Steam is drawn through the wand — pump stays off.
       digitalWrite(PUMP_ENA_PIN, LOW);
       analogWrite(PUMP_PWM_PIN, 0);
       break;
@@ -798,15 +819,63 @@ void updateSystemLogic() {
       break;
   }
 
-  // TEST MODE 2026-04-23: thermoblock seeks setpoint continuously, regardless
-  // of state. safeOff() above writes 0 to HEATER_BREW_PIN each IDLE tick, but
-  // this call re-energises immediately per PID. Integrator reset lives in
-  // stopCurrentOperation() so STOP still clears accumulated error.
-  // Autotune (if active) replaces PID with relay-feedback.
-  if (autotune.active) {
-    autotuneStep();
+  // Single-circuit heater arbitration (Stage 9 / HEATING.md §5). Decides which
+  // element(s) may heat this tick so total instantaneous draw never exceeds
+  // one element (8.3 A). Replaces the old unconditional controlBrewHeater().
+  arbitrateHeaters();
+}
+
+// Heater arbitration for the shared 15 A / 120 V circuit. Task-switch model:
+// user brews OR steams, never both. Rules:
+//   • Nothing heats until the boiler is primed (dry-fire guard, user rule).
+//   • Steaming → boiler active, thermoblock HARD CUT (breaker + task switch).
+//   • Cold start → boiler preheats first, thermoblock inhibited, until the
+//     boiler first reaches its target (avoids 16.6 A parallel warmup).
+//   • Normal brew/idle → thermoblock active; boiler maintains in background
+//     only on ticks the thermoblock doesn't fire (1-tick mutex → SSRs never
+//     both on the same tick → ≤ 8.3 A instantaneous, always).
+void arbitrateHeaters() {
+  // Prime gate — no heating of any kind until the boiler tank is confirmed full.
+  if (!sys.boilerPrimed) {
+    analogWrite(HEATER_BREW_PIN, 0);  sys.heaterBrewOn  = false;
+    analogWrite(HEATER_STEAM_PIN, 0); sys.heaterSteamOn = false;
+    return;
+  }
+
+  bool steaming = (sys.state == STATE_STEAMING || sys.state == STATE_HEATING_STEAM);
+
+  if (steaming) {
+    // Boiler is the active task. Thermoblock off; reset its PID so it resumes
+    // cleanly once steaming ends.
+    analogWrite(HEATER_BREW_PIN, 0);
+    sys.heaterBrewOn = false;
+    sys.pidIntegral  = 0;
+    sys.pidLastError = 0;
+    controlSteamHeater();
+    return;
+  }
+
+  // Cold-start staging: boiler to target first, thermoblock inhibited.
+  if (!sys.boilerPreheatComplete) {
+    analogWrite(HEATER_BREW_PIN, 0);
+    sys.heaterBrewOn = false;
+    controlSteamHeater();
+    if (sys.steamTempActual >= sys.steamTemp + STEAM_PREHEAT_OVERSHOOT) {
+      sys.boilerPreheatComplete = true;
+      Serial.println("INFO:BOILER_READY_HEATING_BREW");
+    }
+    return;
+  }
+
+  // Normal: thermoblock active, boiler maintenance in background via mutex.
+  if (autotune.active) autotuneStep();
+  else                 controlBrewHeater();   // sets sys.heaterBrewOn
+
+  if (!sys.heaterBrewOn) {
+    controlSteamHeater();              // boiler free to heat this tick
   } else {
-    controlBrewHeater();
+    analogWrite(HEATER_STEAM_PIN, 0);  // thermoblock won the tick — hold boiler off
+    sys.heaterSteamOn = false;
   }
 }
 
@@ -1151,6 +1220,9 @@ void controlSteamHeater() {
 #endif
 
   float actual = sys.steamTempActual;
+  // Hold steamTemp + overshoot so the boiler stays at usable steam temp after
+  // coasting through a shot (thermoblock-priority ticks). HEATING.md §5.
+  float target = sys.steamTemp + STEAM_PREHEAT_OVERSHOOT;
 
   if (actual >= MAX_STEAM_TEMP) {
     analogWrite(HEATER_STEAM_PIN, 0);
@@ -1159,8 +1231,8 @@ void controlSteamHeater() {
   }
 
   bool shouldHeat = sys.heaterSteamOn
-    ? (actual < sys.steamTemp)
-    : (actual < sys.steamTemp - STEAM_HYSTERESIS);
+    ? (actual < target)
+    : (actual < target - STEAM_HYSTERESIS);
 
   if (!sys.heatersEnabled) shouldHeat = false;
   analogWrite(HEATER_STEAM_PIN, shouldHeat ? HEATER_PWM_FULL : 0);
@@ -1271,7 +1343,11 @@ void sendTelemetry() {
   Serial.print(",");
   Serial.print(sys.heatersEnabled ? 1 : 0);
   Serial.print(",");
-  Serial.print((int)sys.brewPhase);  // 0=preinfuse, 1=ramp, 2=extract
+  Serial.print((int)sys.brewPhase);  // 0=preinfuse, 1=ramp, 2=hold, 3=extract
+  Serial.print(",");
+  Serial.print(sys.boilerPrimed ? 1 : 0);          // field 15
+  Serial.print(",");
+  Serial.print(sys.boilerPreheatComplete ? 1 : 0); // field 16
   Serial.println();
 }
 

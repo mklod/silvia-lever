@@ -12,6 +12,53 @@
 > - **RC filter on the pump pot** (low priority now): adds analog smoothing to the pot reading. Less urgent than thought — manual takeover under the profile engine already feels responsive and smooth, noticeably better than plain manual mode. Revisit only if pot jitter shows up in a brew log.
 > - **Pi undervoltage during Teensy flash / silvia restart** (low priority): brief brownouts drop the Pi off-network mid-flash. 5V cable + supply are good; stable during normal runtime, so not a real concern operationally. Likely USB-port inrush when the Teensy re-enumerates, not the rail. Flashing recovers fine. Investigate (vcgencmd get_throttled, try powering Teensy separately) only if it becomes disruptive.
 
+## Build 2026-05-29--0126 — Stage 9 boiler (branch `boiler-stage9`, pre-hot-test)
+
+⚠️ On branch `boiler-stage9`, NOT master. `master` + tag `brew-only-stable`
+remain the verified brew-only fallback (morning coffee). Compiles clean, QML
+validated headless; **not yet hot-tested or deployed.**
+
+### Boiler enabled — task-switch model, firmware only (no new hardware)
+
+- **Dry-fire prime gate.** `boilerPrimed` (RAM, false every cold boot).
+  `arbitrateHeaters()` blocks ALL heating until the boiler is primed. Prime =
+  cold-fill (`PRIME_BOILER` → pump→boiler→overflow → `PRIME_DONE`). Cold fill,
+  no steam purge needed.
+- **`arbitrateHeaters()`** (replaces unconditional `controlBrewHeater()`):
+  steaming → boiler active + thermoblock hard-cut; cold-start → boiler first,
+  thermoblock inhibited until boiler at target (latches `boilerPreheatComplete`,
+  emits `INFO:BOILER_READY_HEATING_BREW`); brew/idle → thermoblock active,
+  boiler maintains only on ticks the thermoblock didn't fire (1-tick mutex →
+  SSRs never both on → ≤8.3 A instantaneous, always).
+- **Steam target = steamTemp + 5 °C** (`STEAM_PREHEAT_OVERSHOOT`) — margin so
+  the boiler stays at usable steam temp after coasting through a shot.
+- New cmds: `PRIME_BOILER`; `BEGIN_STEAM` now requires primed. Telemetry
+  fields 15/16 = `boilerPrimed`, `boilerPreheatComplete`.
+
+### UI — home screen reorg
+
+- Removed Rancilio logo + "CONNECTED" text (object kept, hidden — its
+  `connected` property still drives button enables).
+- **Two gauges side by side:** THERMOBLOCK (left, BREW + FLUSH under it) and
+  STEAM BOILER (right, STEAM + PRIME under it). Related controls grouped.
+- **PRIME button glows amber** (pulse) until the boiler is primed; while
+  filling shows "OVERFLOW? TAP" → confirms. STEAM disabled until primed.
+- Boiler gauge ring greys out until primed.
+
+### Validation done / pending
+- ✅ Firmware compiles (52504 B). ✅ QML loads headless (offscreen, mock) with
+  no parse errors; braces balance.
+- ⏳ **Pending: supervised hot test** — prime, boiler preheat to steam temp,
+  steam, brew, verify thermoblock cut during steam + tick-mutex behavior.
+
+> [!warning] Testing Checklist
+> - [ ] Cold boot: PRIME glows; nothing heats until prime done
+> - [ ] PRIME → boiler fills, overflow seen, confirm → boilerPrimed, boiler preheats to steam temp+5
+> - [ ] Thermoblock stays cold during boiler cold-start preheat
+> - [ ] After boiler ready: BREW works, boiler holds maintenance in background
+> - [ ] STEAM → thermoblock cuts to 0, boiler full duty; clamp-meter never >8.3 A
+> - [ ] Two gauges read correct temps
+
 ## Build 2026-05-22--1319 — light-roast profiles + debug-row cleanup
 
 ### Firmware — three new profiles (5 total)

@@ -52,6 +52,8 @@ ApplicationWindow {
     property bool autoBrewMode: false   // mirrors firmware autoBrewMode
     property string profileName: "—"    // active brew profile name
     property int profileIndex: 0        // active brew profile index
+    property bool boilerPrimed: false   // boiler tank filled (dry-fire gate)
+    property bool boilerPreheated: false // boiler first reached steam temp
     // Priming overlay visibility — driven by the home-screen button tap.
     // Decoupled from firmware state so the overlay can be shown BEFORE
     // the user taps START and hangs around until they explicitly dismiss.
@@ -87,6 +89,9 @@ ApplicationWindow {
                 // New brew starting — release the freeze so big-numbers track live again.
                 window.brewDisplayFrozen = false
             }
+            // Derive steamActive from firmware state so the STEAM toggle always
+            // reflects reality (no manual UI flag to get out of sync).
+            window.steamActive = (st === "STEAMING")
             window.currentState = st
         }
         onBrewTimeChanged:   function(time)  { window.brewTime        = time  }
@@ -129,6 +134,14 @@ ApplicationWindow {
         onActiveProfileChanged: function(index, name) {
             window.profileIndex = index
             window.profileName = name
+        }
+
+        onBoilerPrimedChanged: function(primed) {
+            window.boilerPrimed = primed
+        }
+
+        onBoilerPreheatedChanged: function(ready) {
+            window.boilerPreheated = ready
         }
     }
     
@@ -264,7 +277,9 @@ ApplicationWindow {
         color: "#ffffff"
         font.pixelSize: 14
         font.family: "Consolas"
-        visible: stackView.depth <= 1
+        // Hidden 2026-05-29 — connection is reliable; the `connected` property
+        // is still used by button enable-bindings, so the object stays.
+        visible: false
         z: 1000
     }
 
@@ -438,211 +453,225 @@ ApplicationWindow {
             //color: "#2c3e50"
             color: "#101318"
                             
-                Image {
-                    id: runcilio_logo
-                    anchors.horizontalCenter: parent.horizontalCenter
-                    anchors.top: parent.top
-                    anchors.topMargin: 30
-                    source: "svgs/logo.svg"
-                    //fillMode: Image.PreserveAspectFit
-                    smooth: true
-                }
+                // ── Home: two gauges side by side, each with its two related
+                // controls underneath. Thermoblock (BREW/FLUSH) left, steam
+                // boiler (STEAM/PRIME) right. Reorg 2026-05-29. Tapping a gauge
+                // opens settings (temp setpoints, autotune).
+                RowLayout {
+                    id: homeRow
+                    spacing: 70
+                    anchors.centerIn: parent
 
-                
-                RowLayout{
-                    
-                    spacing: 100
-                    anchors.horizontalCenter: parent.horizontalCenter
-                    anchors.top: runcilio_logo.bottom
-                    anchors.bottom: parent.bottom
-                    width: Math.min(800, parent.width*0.9)
-
+                    // ══ THERMOBLOCK column ════════════════════════════════
                     ColumnLayout {
+                        spacing: 16
+                        Layout.alignment: Qt.AlignVCenter
 
-                        Layout.leftMargin: 30
-                        Layout.alignment: Qt.AlignLeft
-
-                        spacing: 10
-                        
-                        Button {
-                            text: qsTr("BREW")
-
-                            contentItem: Text {
-                                text: parent.text
-                                font.pixelSize: 28
-                                opacity: enabled ? 1.0 : 0.3
-                                color: "#ffffff"
-                                horizontalAlignment: Text.AlignHCenter
-                                verticalAlignment: Text.AlignVCenter
-                                elide: Text.ElideRight
-                            }
-
-                            background: Rectangle {
-                                implicitWidth: 190
-                                implicitHeight: 58
-                                opacity: enabled ? 1 : 0.3
-                                color: parent.down ? Qt.rgba(1,1,1,0.15) : "transparent"
-                                border.color: "#ffffff"
-                                border.width: 1
-                                radius: 12
-                            }
-
-                            enabled: connectionStatus.connected
-                            onClicked: {
-                                window.brewTime = "00:00"
-                                controller.heatBrew()           // kick thermoblock heating
-                                // Priming popup removed 2026-05-22 — the
-                                // thermoblock is effectively always primed in
-                                // normal use; prime manually with FLUSH if ever
-                                // needed.
-                                stackView.push(brewScreen)
-                            }
+                        Text {
+                            Layout.alignment: Qt.AlignHCenter
+                            text: "THERMOBLOCK"
+                            color: "#8a93a0"; font.pixelSize: 15; font.bold: true
+                            font.letterSpacing: 1
                         }
-                        
-                        // ── STEAM toggle button ─────────────────────────────
-                        // Same toggle behaviour and styling as FLUSH:
-                        // tap to start, tap again to stop. Active = depressed.
-                        Rectangle {
-                            id: steamBtn
-                            Layout.preferredWidth: 190
-                            Layout.preferredHeight: 58
-                            radius: 12
 
-                            color: window.steamActive
-                                   ? "#ffffff"
-                                   : (steamArea.pressed ? Qt.rgba(1,1,1,0.15) : "transparent")
-                            border.color: "#ffffff"
-                            border.width: 1
-                            opacity: connectionStatus.connected ? 1.0 : 0.3
-
-                            Rectangle {
-                                anchors.fill: parent
-                                anchors.margins: 1
-                                color: "transparent"
-                                border.color: window.steamActive ? Qt.rgba(0,0,0,0.25) : "transparent"
-                                border.width: 1
-                                radius: parent.radius - 1
-                                visible: window.steamActive
-                            }
-
+                        CircularSlider {
+                            id: brewGauge
+                            Layout.alignment: Qt.AlignHCenter
+                            width: 150; height: 150
+                            minValue: 0
+                            maxValue: Math.max(window.brewTempActual, window.brewTargetTemp, 1)
+                            value: window.brewTempActual
+                            interactive: false
+                            progressColor: "#2290e7"
+                            trackColor: "#34495e"
+                            startAngle: 30.0; endAngle: 330; rotation: 180
                             Text {
                                 anchors.centerIn: parent
-                                text: window.steamActive ? "STEAMING" : "STEAM"
-                                font.pixelSize: window.steamActive ? 22 : 28
-                                font.bold: window.steamActive
-                                color: window.steamActive ? "#000000" : "#ffffff"
+                                text: window.brewTempActual.toFixed(1) + "°C"
+                                color: window.brewTempActual > window.brewTargetTemp ? "#ff6b6b" : "white"
+                                font.pixelSize: 26; font.bold: true; rotation: 180
                             }
-
                             MouseArea {
-                                id: steamArea
                                 anchors.fill: parent
-                                enabled: connectionStatus.connected
-                                onClicked: {
-                                    if (window.steamActive) {
-                                        window.steamActive = false
-                                        controller.stopSteam()
-                                    } else {
-                                        controller.heatSteam()        // kick boiler heating
-                                        window.steamPrimingOpen = true
+                                onClicked: stackView.push(settingsScreen)
+                            }
+                        }
+
+                        RowLayout {
+                            Layout.alignment: Qt.AlignHCenter
+                            spacing: 12
+
+                            // BREW — opens brew screen, kicks thermoblock heat.
+                            Rectangle {
+                                Layout.preferredWidth: 130; Layout.preferredHeight: 52
+                                radius: 10
+                                color: brewArea.pressed ? Qt.rgba(1,1,1,0.15) : "transparent"
+                                border.color: "#ffffff"; border.width: 1
+                                opacity: connectionStatus.connected ? 1.0 : 0.3
+                                Text { anchors.centerIn: parent; text: "BREW"
+                                       color: "#ffffff"; font.pixelSize: 24 }
+                                MouseArea {
+                                    id: brewArea
+                                    anchors.fill: parent
+                                    enabled: connectionStatus.connected
+                                    onClicked: {
+                                        window.brewTime = "00:00"
+                                        controller.heatBrew()
+                                        stackView.push(brewScreen)
                                     }
                                 }
                             }
-                        }
-                        
-                        // ── FLUSH toggle button ─────────────────────────────
-                        // Single button: tap to start flush, tap again to stop.
-                        // Active state = depressed look (filled white bg, dark text).
-                        Rectangle {
-                            id: flushBtn
-                            Layout.preferredWidth: 190
-                            Layout.preferredHeight: 58
-                            radius: 12
 
-                            // Visual states:
-                            // - inactive + idle    → transparent fill, white outline, white text
-                            // - inactive + pressed → faint white fill (touch feedback)
-                            // - active             → solid white fill, dark text (depressed look)
-                            color: window.flushActive
-                                   ? "#ffffff"
-                                   : (flushArea.pressed ? Qt.rgba(1,1,1,0.15) : "transparent")
-                            border.color: "#ffffff"
-                            border.width: 1
-                            opacity: connectionStatus.connected ? 1.0 : 0.3
-
-                            // Subtle inner shadow when active for neumorphic depressed feel
+                            // FLUSH — thermoblock flush, toggle.
                             Rectangle {
-                                anchors.fill: parent
-                                anchors.margins: 1
-                                color: "transparent"
-                                border.color: window.flushActive ? Qt.rgba(0,0,0,0.25) : "transparent"
-                                border.width: 1
-                                radius: parent.radius - 1
-                                visible: window.flushActive
-                            }
-
-                            Text {
-                                anchors.centerIn: parent
-                                text: window.flushActive ? "FLUSHING" : "FLUSH"
-                                font.pixelSize: window.flushActive ? 22 : 28
-                                font.bold: window.flushActive
-                                color: window.flushActive ? "#000000" : "#ffffff"
-                            }
-
-                            MouseArea {
-                                id: flushArea
-                                anchors.fill: parent
-                                enabled: connectionStatus.connected
-                                onClicked: {
-                                    if (window.flushActive) {
-                                        window.flushActive = false
-                                        controller.stopFlush()
-                                    } else {
-                                        window.flushActive = true
-                                        controller.startFlush()
+                                Layout.preferredWidth: 130; Layout.preferredHeight: 52
+                                radius: 10
+                                color: window.flushActive ? "#ffffff"
+                                       : (flushArea.pressed ? Qt.rgba(1,1,1,0.15) : "transparent")
+                                border.color: "#ffffff"; border.width: 1
+                                opacity: connectionStatus.connected ? 1.0 : 0.3
+                                Text {
+                                    anchors.centerIn: parent
+                                    text: window.flushActive ? "FLUSHING" : "FLUSH"
+                                    color: window.flushActive ? "#000000" : "#ffffff"
+                                    font.pixelSize: window.flushActive ? 18 : 24
+                                    font.bold: window.flushActive
+                                }
+                                MouseArea {
+                                    id: flushArea
+                                    anchors.fill: parent
+                                    enabled: connectionStatus.connected
+                                    onClicked: {
+                                        if (window.flushActive) {
+                                            window.flushActive = false
+                                            controller.stopFlush()
+                                        } else {
+                                            window.flushActive = true
+                                            controller.startFlush()
+                                        }
                                     }
                                 }
                             }
                         }
                     }
 
-                    CircularSlider {
-                        id: tempGauge
-                        Layout.alignment: Qt.AlignRight
-                        Layout.rightMargin: 30
-                        width: 120
-                        height: 120
-
-                        property real displayTemp: window.steamActive ? window.steamTempActual : window.brewTempActual
-                        property real displayTarget: window.steamActive ? window.steamTargetTemp : window.brewTargetTemp
-
-                        minValue: 0
-                        maxValue: Math.max(displayTemp, displayTarget)
-                        value: displayTemp
-                        interactive: false
-                        progressColor: "#2290e7"
-                        trackColor: "#34495e"
-
-                        startAngle: 30.0
-                        endAngle: 330
-                        rotation: 180
+                    // ══ STEAM BOILER column ═══════════════════════════════
+                    ColumnLayout {
+                        spacing: 16
+                        Layout.alignment: Qt.AlignVCenter
 
                         Text {
-                            anchors.centerIn: parent
-                            text: tempGauge.displayTemp.toFixed(1) + "°C"
-                            color: tempGauge.displayTemp > tempGauge.displayTarget ? "#ff0000" : "white"
-                            font.pixelSize: 24
-                            font.bold: true
-                            rotation: 180
+                            Layout.alignment: Qt.AlignHCenter
+                            text: "STEAM BOILER"
+                            color: "#8a93a0"; font.pixelSize: 15; font.bold: true
+                            font.letterSpacing: 1
                         }
-                        MouseArea {
-                            id: mouseArea
-                            anchors.fill: parent
-                            onClicked: {
-                                stackView.push(settingsScreen)
+
+                        CircularSlider {
+                            id: boilerGauge
+                            Layout.alignment: Qt.AlignHCenter
+                            width: 150; height: 150
+                            minValue: 0
+                            maxValue: Math.max(window.steamTempActual, window.steamTargetTemp, 1)
+                            value: window.steamTempActual
+                            interactive: false
+                            progressColor: window.boilerPrimed ? "#e67e22" : "#555a63"
+                            trackColor: "#34495e"
+                            startAngle: 30.0; endAngle: 330; rotation: 180
+                            Text {
+                                anchors.centerIn: parent
+                                text: window.steamTempActual.toFixed(1) + "°C"
+                                color: window.steamTempActual > window.steamTargetTemp ? "#ff6b6b" : "white"
+                                font.pixelSize: 26; font.bold: true; rotation: 180
                             }
-                            // Optional: Visual feedback on hover
-                            onEntered: tempGauge.scale = 1.05
-                            onExited: tempGauge.scale = 1.0
+                            MouseArea {
+                                anchors.fill: parent
+                                onClicked: stackView.push(settingsScreen)
+                            }
+                        }
+
+                        RowLayout {
+                            Layout.alignment: Qt.AlignHCenter
+                            spacing: 12
+
+                            // STEAM — toggle; requires a primed boiler.
+                            Rectangle {
+                                Layout.preferredWidth: 130; Layout.preferredHeight: 52
+                                radius: 10
+                                color: window.steamActive ? "#ffffff"
+                                       : (steamArea.pressed ? Qt.rgba(1,1,1,0.15) : "transparent")
+                                border.color: "#ffffff"; border.width: 1
+                                opacity: (connectionStatus.connected && window.boilerPrimed) ? 1.0 : 0.3
+                                Text {
+                                    anchors.centerIn: parent
+                                    text: window.steamActive ? "STEAMING" : "STEAM"
+                                    color: window.steamActive ? "#000000" : "#ffffff"
+                                    font.pixelSize: window.steamActive ? 18 : 24
+                                    font.bold: window.steamActive
+                                }
+                                MouseArea {
+                                    id: steamArea
+                                    anchors.fill: parent
+                                    enabled: connectionStatus.connected && window.boilerPrimed
+                                    onClicked: {
+                                        if (window.steamActive) {
+                                            controller.stopSteam()
+                                        } else {
+                                            controller.beginSteam()
+                                        }
+                                    }
+                                }
+                            }
+
+                            // PRIME — fills the boiler tank. Glows (amber pulse)
+                            // until primed (gentle nag). While filling, tap to
+                            // confirm overflow. Re-primeable after.
+                            Rectangle {
+                                id: primeBtn
+                                Layout.preferredWidth: 130; Layout.preferredHeight: 52
+                                radius: 10
+                                property bool filling: window.currentState === "PRIMING_STEAM"
+                                color: primeArea.pressed ? Qt.rgba(1,1,1,0.15) : "transparent"
+                                border.color: window.boilerPrimed ? "#27ae60" : "#e67e22"
+                                border.width: 2
+                                opacity: connectionStatus.connected ? 1.0 : 0.3
+
+                                // Amber glow pulse while not yet primed.
+                                Rectangle {
+                                    id: primeGlow
+                                    anchors.fill: parent
+                                    radius: parent.radius
+                                    color: "#e67e22"
+                                    visible: !window.boilerPrimed
+                                    opacity: 0.0
+                                    SequentialAnimation on opacity {
+                                        running: !window.boilerPrimed
+                                        loops: Animation.Infinite
+                                        NumberAnimation { to: 0.45; duration: 750 }
+                                        NumberAnimation { to: 0.08; duration: 750 }
+                                    }
+                                }
+                                Text {
+                                    anchors.centerIn: parent
+                                    text: primeBtn.filling ? "OVERFLOW? TAP"
+                                          : (window.boilerPrimed ? "PRIMED ✓" : "PRIME")
+                                    color: "#ffffff"
+                                    font.pixelSize: primeBtn.filling ? 15 : 22
+                                    font.bold: !window.boilerPrimed
+                                }
+                                MouseArea {
+                                    id: primeArea
+                                    anchors.fill: parent
+                                    enabled: connectionStatus.connected
+                                    onClicked: {
+                                        if (primeBtn.filling) {
+                                            controller.primeDone()
+                                        } else {
+                                            controller.primeBoiler()
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 }

@@ -74,6 +74,10 @@
 
 // ─── Steam Boiler Thermostat ─────────────────────────────────────────────────
 #define STEAM_HYSTERESIS  2.0   // Switch off when within 2°C of target; on when 2°C below
+// Boiler holds steamTemp + this overshoot. Banks thermal margin so the boiler
+// is still at usable steam temp after coasting (thermoblock-priority ticks)
+// through a 30–60 s shot. See HEATING.md §5.
+#define STEAM_PREHEAT_OVERSHOOT 5.0
 
 // ─── Auto-Prime ──────────────────────────────────────────────────────────────
 // Priming runs until the user confirms overflow via the UI (PRIME_DONE command).

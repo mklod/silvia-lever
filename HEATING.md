@@ -256,7 +256,37 @@ takes over at `error = 5 °C`).
 
 ---
 
-## 5. Stage 9 — simultaneous boiler + thermoblock (pending)
+## 5. Stage 9 — simultaneous boiler + thermoblock (IMPLEMENTED 2026-05-29, pending hot test)
+
+> **Status:** firmware implemented on branch `boiler-stage9`. Task-switch model
+> (user brews OR steams, never both) + dry-fire prime gate + single-circuit
+> heater arbitration. NOT yet hot-tested. `master`/tag `brew-only-stable` is
+> the fallback. Summary of what shipped below; original design rationale follows.
+>
+> **Implemented model (no current-monitor hardware — firmware only):**
+> - **Dry-fire prime gate.** `sys.boilerPrimed` (RAM, false every cold boot).
+>   `arbitrateHeaters()` blocks ALL heating until the boiler is primed. Prime =
+>   cold-fill via `PRIME_BOILER` → pump→boiler→overflow → `PRIME_DONE` sets the
+>   flag. Cold fill needs no steam purge.
+> - **`arbitrateHeaters()`** replaces the old unconditional `controlBrewHeater()`
+>   call. Rules: steaming → boiler active + thermoblock HARD CUT; cold start →
+>   boiler preheats first, thermoblock inhibited until boiler hits target
+>   (`boilerPreheatComplete` latches, emits `INFO:BOILER_READY_HEATING_BREW`);
+>   normal brew/idle → thermoblock active, boiler maintains only on ticks the
+>   thermoblock didn't fire (1-tick mutex → SSRs never both on → ≤8.3 A).
+> - **Steam target = `steamTemp + STEAM_PREHEAT_OVERSHOOT` (5 °C)** — banks
+>   margin so the boiler stays at usable steam temp after coasting through a shot.
+> - **Telemetry fields 15/16** = `boilerPrimed`, `boilerPreheatComplete`.
+>   New commands `PRIME_BOILER`; `BEGIN_STEAM` now requires primed.
+> - **UI:** home screen reorganised to two gauges (thermoblock + boiler), each
+>   with its two controls (BREW/FLUSH, STEAM/PRIME). PRIME glows until primed.
+>
+> Current-monitor hardware (CT clamp + measured load manager for true
+> concurrency / background-shot-while-steaming) deferred indefinitely — see
+> §5 "Phase 2" discussion in git history / PROFILES work. The task-switch model
+> makes it unnecessary for the primary flow.
+
+### Stage 9 — simultaneous boiler + thermoblock (original design notes)
 
 ### Goal
 

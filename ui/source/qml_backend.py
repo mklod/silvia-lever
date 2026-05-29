@@ -39,6 +39,8 @@ class CoffeeController(QObject):
     autoBrewModeChanged = pyqtSignal(bool)
     profilesChanged = pyqtSignal(list)         # full list of profile names
     activeProfileChanged = pyqtSignal(int, str)  # (index, name)
+    boilerPrimedChanged = pyqtSignal(bool)     # boiler tank filled / dry-fire gate
+    boilerPreheatedChanged = pyqtSignal(bool)  # boiler first reached steam temp
     autotuneLineReceived = pyqtSignal(str)  # raw firmware line: AUTOTUNE:... or AUTOTUNE_RESULT:...
     
     def __init__(self, parent=None):
@@ -63,6 +65,8 @@ class CoffeeController(QObject):
         self._auto_brew_mode = False   # mirrors firmware autoBrewMode flag
         self._profiles = []            # brew-profile names, learned from firmware
         self._profile_index = 0        # active profile index
+        self._boiler_primed = False    # mirrors firmware boilerPrimed
+        self._boiler_preheated = False # mirrors firmware boilerPreheatComplete
         
         # Connect safety signals
         self.safety.emergencyStop.connect(self._emergency_stop)
@@ -282,12 +286,27 @@ class CoffeeController(QObject):
             self.logger.log_command("STOP")
             
     @pyqtSlot()
+    def primeBoiler(self):
+        """Start filling the boiler tank (pump → boiler). User watches for
+        overflow, then calls primeDone(). Dry-fire gate: the boiler element
+        will not energize until this completes. Best done cold at startup."""
+        if not self.connected:
+            self.errorOccurred.emit("Cannot prime boiler - not connected")
+            return
+        if hasattr(self, '_current_state') and self._current_state != "IDLE":
+            self.serial.send_command("STOP")
+            QTimer.singleShot(100, lambda: self.serial.send_command("PRIME_BOILER"))
+        else:
+            self.serial.send_command("PRIME_BOILER")
+        self.logger.log_command("PRIME_BOILER")
+
+    @pyqtSlot()
     def beginSteam(self):
         """Called when steam temperature is ready and user presses BEGIN STEAM"""
         if not self.connected:
             self.errorOccurred.emit("Cannot begin steam - not connected")
             return
-            
+
         self.serial.send_command("BEGIN_STEAM")
         self.logger.log_command("BEGIN_STEAM")
         
@@ -364,6 +383,17 @@ class CoffeeController(QObject):
                 phase_names = ("preinfuse", "ramp", "hold", "extract")
                 phase_name = phase_names[brew_phase] if 0 <= brew_phase < len(phase_names) else "?"
                 self._brew_phase = phase_name
+
+                # Boiler prime / preheat (fields 15, 16 — new for Stage 9).
+                # Older firmware won't send them; default False if missing.
+                boiler_primed = bool(int(parts[14])) if len(parts) > 14 else False
+                if boiler_primed != self._boiler_primed:
+                    self._boiler_primed = boiler_primed
+                    self.boilerPrimedChanged.emit(boiler_primed)
+                boiler_preheated = bool(int(parts[15])) if len(parts) > 15 else False
+                if boiler_preheated != self._boiler_preheated:
+                    self._boiler_preheated = boiler_preheated
+                    self.boilerPreheatedChanged.emit(boiler_preheated)
 
                 # Safety checks on both temperatures
                 if not self.safety.check_temperature(brew_temp):
