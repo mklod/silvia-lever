@@ -127,34 +127,27 @@ sensing (fuse or PT1000) is structurally too slow/indirect because it watches
 the wrong thing (body temp) with the wrong timing (after the element is already
 overheating).
 
-### The real fix — water level sensing
+> Context: the donor machine *did* burn out an element years ago — almost
+> certainly long successive steams with no pump refill (the classic dry-fire).
+> It's a characterized, understood risk, not a present blocker: every bench test
+> starts with a **full** boiler and we watch the level. The proper fix (a level
+> probe) is queued, not gating.
 
-- **Add a conductivity level probe** to the steam boiler (exactly what the
-  Silvia **Pro** added to this same boiler lineage, and what every dual-boiler
-  does). Probe detects low water → firmware cuts the element and/or pulses the
-  pump to refill. This is the *only* reliable burnout prevention. The reused OG
-  boiler has the ports / can be tapped for one. **Strongly recommended.**
+### The fix — water level sensing (full design in `LEVEL_SENSING.md`)
 
-### Sensorless fallback (if no probe yet) — proactive top-up, err full
+The real solution is a **conductivity level probe** + a hard element interlock
+("element only fires when water is confirmed above the probe; dry → cut +
+pump-refill"). This is what the Silvia **Pro** added to this same boiler
+lineage. Options, circuit, parts list, and the firmware-hook plan live in
+**`LEVEL_SENSING.md`**.
 
-Because the OPV returns overfill to the reservoir, **you cannot overfill by
-pumping** — excess just goes back to the tank. So:
-
-- **Periodically/proactively pulse the pump to top up** the steam boiler (e.g.
-  before and after each steam session, or on a steam-time budget). Topping up
-  can't overfill (OPV returns excess) and keeps it safely away from dry.
-- Trade-off: cold top-up water **drops boiler temp** → reheat wait. A probe
-  avoids needless top-ups (refill only when actually low).
-- **Err full, always.** Overfill is self-correcting and harmless; underfill
-  burns the element. Never run the element on an unverified/low boiler.
-- Keep the `MAX_STEAM_TEMP` cut as a backstop, knowing it won't save the element
-  on its own.
-
-### Firmware/UX direction
-- **Best:** integrate a level probe → closed-loop fill + hard dry cutoff.
-- **Interim:** conservative auto-top-up (pump pulse) keyed to steam usage,
-  erring full; UI shows steam-time budget and nags to refill; element inhibited
-  whenever level is unverified.
+**Sensorless interim** (until a probe is fitted): because the OPV returns
+overfill to the reservoir, **you can't overfill by pumping** — so proactively
+pulse the pump to top up (keyed to steam usage), **err full**, and let the OPV
+shed the excess. Trade-off: cold top-ups drop boiler temp (reheat wait). Always
+err full — overfill is self-correcting and harmless; underfill burns the
+element. Keep `MAX_STEAM_TEMP` + the thermal fuse as backstops, knowing they
+won't save the element on their own.
 
 ---
 
