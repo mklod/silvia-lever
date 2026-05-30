@@ -88,6 +88,58 @@ The classic Silvia kill:
 
 ---
 
+## 5b. OPV pressure ↔ steam temp, and headspace sizing (our tuning)
+
+### The OPV setpoint caps the boiler temperature
+The boiler can only reach the **saturation temperature of the OPV's relief
+pressure**. Set the OPV too low and the boiler boils off through it at ~100 °C
+and never makes real steam (exactly the virgin-OPV behavior we saw — dumps at
+99 °C). Saturated steam, gauge pressure ↔ temp:
+
+| Boiler temp | OPV must hold ≥ |
+|-------------|-----------------|
+| 110 °C | 0.43 bar |
+| 120 °C | 1.0 bar |
+| **130 °C** | **1.7 bar** |
+| 135 °C | 2.1 bar |
+| 140 °C | 2.6 bar |
+
+**Tune the OPV to hold the pressure for your target steam temp** (set the relief
+a bit above target so it acts as safety, not a routine vent). **Firmware
+coupling:** `DEFAULT_STEAM_TEMP` (130 °C) + `STEAM_PREHEAT_OVERSHOOT` (5) = 135 °C
+target → needs the OPV to hold ~2.1 bar. If the OPV is tuned lower, lower the
+firmware steam setpoint to match its saturation temp — **otherwise the element
+runs forever trying to reach a temp the OPV bleeds off.** OPV pressure and steam
+setpoint must agree. (A fresh OPV comes mis-set — same tuning the thermoblock
+OPV needed, just at lower working pressure.)
+
+### How much headspace a small steam boiler needs — not much
+Headspace is **vapour–liquid separation + pressure buffer, not steam storage.**
+At ~1.7 bar/130 °C steam density is ~1.5 g/L, so a 75 mL (25 %) headspace holds
+only **~0.11 g of steam** — vs ~20–25 g condensed into the milk per latte. All
+the steam is made **on demand by boiling**; the headspace just keeps the steam
+dry (droplets fall back) and smooths pressure.
+
+For a 0.3 L boiler:
+
+| Headspace | Volume | Verdict |
+|-----------|--------|---------|
+| 25 % (75 % full) | 75 mL | Industry norm (autofill target). Dry steam. |
+| 15 % (85 % full) | 45 mL | Fine. |
+| 10 % (90 % full) | 30 mL | Workable minimum if the takeoff is well placed. |
+| 5 % (95 % full) | 15 mL | Too tight — water carryover/spitting, droopy pressure. |
+
+Our side-port sits **very near the top → ~5–10 % headspace** — borderline but
+probably functional for small milk volumes; expect wetter steam / bigger
+pressure dip than a 25 % boiler. If steam is spitty, drop the water line a touch.
+
+What sets what: **element power → steam rate; headspace + takeoff → steam
+dryness; usable water above the element → drinks per fill.** A 0.3 L boiler with
+~⅓ usable ≈ **~100 g steam ≈ 4–5 lattes per fill** before a refill — so
+occasional top-ups, not per-drink.
+
+---
+
 ## 6. Our build — repurposed OG Silvia boiler, steam-only
 
 **Our steam boiler IS an OG Silvia boiler**, reused, repurposed for steam only.
