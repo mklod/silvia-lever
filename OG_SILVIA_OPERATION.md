@@ -140,6 +140,78 @@ occasional top-ups, not per-drink.
 
 ---
 
+## 5c. Vacuum breaker (anti-vacuum valve)
+
+The Silvia **Pro** steam boiler has *two* valves: a **safety valve / OPV
+(~2 bar)** and a separate **anti-vacuum valve (vacuum breaker)**. The classic OG
+Silvia has **no** vacuum breaker — which is *why* you manually purge the wand.
+The vacuum breaker is a one-way valve that **opens to admit air when boiler
+pressure falls below atmospheric, and seals once steam pressure builds.** Two
+jobs from that one behavior:
+
+1. **Cool-down — prevents vacuum & suck-back.** Off/cooling, the boiler is full
+   of steam; condensing steam is a ~1600:1 volume collapse → pressure craters
+   *below atmospheric* → vacuum. The breaker admits air to equalize, preventing
+   suck-back and seal/boiler stress.
+2. **Heat-up — auto-purges air for dry steam.** Cold, the valve is open; as the
+   boiler warms, trapped headspace air vents out; once steam pressure builds it
+   seals. So the headspace fills with *clean steam*, not a steam/air mix — **the
+   automatic version of the manual ~1 s wand purge.**
+
+### For our build
+- **Suck-back of reservoir water is largely blocked by our 3-way valves.** V1
+  gates the pump→boiler path; de-energised (idle/cool-down) the boiler is valved
+  off from the reservoir, so a cool-down vacuum can't siphon tank water back in
+  the way an OG Silvia's single-pump/open path could — *unless a valve is left
+  in the wrong state.* So suck-back is a lesser concern for us than on a stock
+  Silvia.
+- **What the vacuum breaker still buys us:** (a) prevents the sealed-boiler
+  **vacuum itself** on cool-down (repeated vacuum cycling stresses seals / can
+  draw air past gaskets / pull the OPV-return water back), and (b) **automatic
+  dry steam** — no manual wand-purge ritual. So it's worth adding even with our
+  valves: more a **seal-stress safety + QoL** item than a suck-back fix.
+- Priority: the **fill probe** is a nice-to-have future add; the **vacuum
+  breaker** is the more clearly-warranted addition for seal longevity + steam
+  quality.
+
+## 5d. Steam-boiler safety review (current state)
+
+Ranked, for a custom build with a hot pressurized steam vessel:
+
+1. **⚠ Verify the OPV still RELIEVES.** The OPV was *torqued down* to raise its
+   setpoint so the boiler reaches steam temp. Critical check: it must still
+   **pop and relieve at a safe pressure** (~2–2.5 bar) — **not** torqued so far
+   it never opens. An OPV that can't relieve turns the boiler into an
+   un-protected pressure vessel. This is the #1 safety item. Ideally confirm
+   with a gauge; at minimum confirm it audibly relieves at its set pressure and
+   isn't bottomed out. A *dedicated non-adjustable safety relief* (like the
+   Pro's separate 2 bar safety valve) is the gold standard if the lone OPV is
+   doing both working-setpoint and safety duty.
+2. **Dry-fire / element burnout.** Steam-only boiler isn't refilled by brewing →
+   can run dry → element burnout (and a dry glowing element is a fire risk the
+   thermal fuse only *partially* catches). Mitigated today by careful use +
+   watching the level; the **level probe** is the real fix (§ LEVEL_SENSING.md).
+   Neither fuse nor PT1000 prevents the burnout itself.
+3. **Firmware hang → runaway heat.** If the Teensy hangs with the steam SSR on,
+   *only the mechanical OPV + thermal fuse* stop it (the `MAX_STEAM_TEMP` cut
+   needs a running main loop). So those mechanical safeties must be sound.
+   Consider a **hardware watchdog** that de-energises the SSRs if the main loop
+   stops servicing it.
+4. **Vacuum on cool-down** — seal stress; addressed by the vacuum breaker (5c).
+5. **Scald / hot-water routing.** Route the OPV/expansion dump safely (not at
+   the user). Note: returning ~100 °C water to a **plastic reservoir** can warp
+   it — use a heat-tolerant return or let it cool in the line.
+6. **Electrical.** Mains element in a water boiler — ensure solid earth bond,
+   element-seal integrity, and ideally a **GFCI/RCD** on the supply. The boiler
+   body will also be the conductivity-probe ground when fitted — bond it well.
+
+Backstops in place: tuned OPV (mechanical relief), hardware thermal fuse (fire),
+firmware `MAX_STEAM_TEMP` 160 °C cut (needs running firmware). Gaps to close:
+confirm OPV relief headroom (#1), add level sensing (#2), consider a hardware
+watchdog (#3) and a vacuum breaker (4/5c).
+
+---
+
 ## 6. Our build — repurposed OG Silvia boiler, steam-only
 
 **Our steam boiler IS an OG Silvia boiler**, reused, repurposed for steam only.
