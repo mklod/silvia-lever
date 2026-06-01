@@ -256,12 +256,33 @@ takes over at `error = 5 °C`).
 
 ---
 
-## 5. Stage 9 — simultaneous boiler + thermoblock (IMPLEMENTED 2026-05-29, pending hot test)
+## 5. Stage 9 — simultaneous boiler + thermoblock (IMPLEMENTED + STEAM-VERIFIED 2026-06-01)
 
-> **Status:** firmware implemented on branch `boiler-stage9`. Task-switch model
-> (user brews OR steams, never both) + dry-fire prime gate + single-circuit
-> heater arbitration. NOT yet hot-tested. `master`/tag `brew-only-stable` is
-> the fallback. Summary of what shipped below; original design rationale follows.
+> **Status:** firmware on branch `boiler-stage9`, **verified on hardware
+> 2026-06-01** — boiler primes, preheats to steam temp (140 °C) via cold-start
+> staging, then thermoblock reaches setpoint; steam SSR fires (digitalWrite,
+> pin-16 fix); thermoblock cuts during steam. OPV tuned (held steam pressure,
+> no spitting). Pending: level probe for auto-fill / dry-fire. `master`/tag
+> `brew-only-stable` remains the fallback.
+
+### Heater state by mode (verified)
+
+| Mode | Thermoblock | Steam boiler | Notes |
+|------|-------------|--------------|-------|
+| Unprimed | OFF | OFF | prime gate — no heat until primed |
+| Priming (fill) | OFF | OFF | still unprimed during fill |
+| Cold-start preheat | **inhibited (off)** | **full duty** | boiler first; releases at `BOILER_READY` (avoids 16.6 A parallel warmup) |
+| Both ready / idle | maintains brew temp | maintains steam temp | 1-tick mutex → never both on same tick → ≤8.3 A |
+| Brewing | **active (priority)** | background maintenance, mutex-throttled | boiler coasts a few °C during the shot (covered by +5 °C overshoot), recovers after — **not cut** |
+| Steaming | **HARD CUT to 0** | **full duty (priority)** | active steam needs the whole element; brew-XOR-steam |
+
+Boiler is only *fully* off when: unprimed, `heatersEnabled` false, or over
+`MAX_STEAM_TEMP` (160 °C). The **STEAM button** is purely a heater-arbitration
+mode switch (no valve — steam is the manual wand): it cuts the thermoblock and
+hands the boiler the full element so steam is strong; without it the tick-mutex
+would split power → weaker steam.
+
+> Original design rationale and the staged cold-start sequence follow below.
 >
 > **Implemented model (no current-monitor hardware — firmware only):**
 > - **Dry-fire prime gate.** `sys.boilerPrimed` (RAM, false every cold boot).

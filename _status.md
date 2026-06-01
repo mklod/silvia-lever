@@ -1,7 +1,15 @@
 # Status
 
 ## Current milestone
-**Alpha — thermoblock PID tuned.** First successful autotune complete (Kp/Ki/Kd = 46.94/0.516/3155.89, TL rule). Derivative-on-measurement + low-pass filter added. Boiler still disabled for single-heater focus; S9.7b measured (1.51 A avg maintenance) → Stage 9 concurrent heating unblocked on measurement side, pending implementation.
+**Alpha+ — boiler live (Stage 9), staged dual-heat verified.** Steam boiler enabled on branch `boiler-stage9` and confirmed working on hardware: cold-start staging (boiler first to steam temp, thermoblock inhibited until `BOILER_READY`, then thermoblock to setpoint), digitalWrite steam-SSR fix (pin 16 has no PWM), task-switch heater arbitration (BREW → boiler coasts via tick-mutex; STEAM → thermoblock hard-cut). OPV tuned. Pending: level probe (Silvia Pro probe ordered) for auto-fill / dry-fire safety; merge boiler-stage9 → master after extended steam testing. Thermoblock PID: Kp/Ki/Kd = 46.94/0.516/3155.89 (TL).
+
+## Session 2026-06-01 (14:16) — Steam works: OPV tuned, staged dual-heat verified on hardware
+- **OPV adjustment solved the 99 °C dump.** Virgin steam-boiler OPV was set too low (relieved at ~0 bar → boiled off at 99 °C, never made steam). Torqued the OPV screw down to hold steam pressure → **zero steam / zero spitting on the boiler OPV water-return hose**, boiler climbed cleanly to **140 °C**, then the thermoblock reached its setpoint shortly after. Confirms the OPV setpoint caps boiler temp (saturation) per OG_SILVIA_OPERATION.md §5b.
+- **Cold-start staging verified:** boiler heats first (thermoblock inhibited) to its target, emits `BOILER_READY`, then the thermoblock is released and reaches setpoint. No 16.6 A parallel warmup.
+- **Steam-SSR fix confirmed working:** boiler SSR fires (digitalWrite on pin 16; analogWrite was a silent no-op — pin 16 isn't PWM on Teensy 4.0). Thermoblock stayed cold during boiler preheat.
+- **Heater arbitration clarified/validated:** tapping BREW does NOT cut the boiler — it keeps maintaining in the background, throttled by the 1-tick mutex while the thermoblock is busy (coasts a few °C, covered by the +5 °C overshoot, recovers after the shot). STEAM is the only hard-cut: thermoblock → 0, boiler → full duty. Boiler is only fully off when unprimed / heatersEnabled off / over MAX_STEAM_TEMP. (Full state table added to HEATING.md §5.)
+- **STEAM button role:** purely a heater-arbitration mode switch — no valve action (steam is the manual wand). It cuts the thermoblock and hands the boiler the full element for strong steam; without it the tick-mutex would split power → weaker steam.
+- Still pending hardware: the Silvia Pro **level probe** (part 10701803, 3/8 BSP) for auto-fill + dry-fire safety (LEVEL_SENSING.md). Boiler is steam-only (not refilled by brewing) so this is the one genuine gap vs an OG Silvia.
 
 ## Session 2026-05-29 (01:26) — Stage 9 boiler implemented (branch boiler-stage9, pre-hot-test)
 - **Fallback locked first:** tag `brew-only-stable` (master HEAD) + fallback hex saved locally and on Pi 1 at `/home/gram/silvia_fw_BREWONLY_FALLBACK.hex`. Boiler work is on branch `boiler-stage9`; master stays brew-only for morning coffee. To restore brew-only: `git checkout brew-only-stable`, or reflash the fallback hex.
