@@ -176,40 +176,52 @@ jobs from that one behavior:
 
 ## 5d. Steam-boiler safety review (current state)
 
-Ranked, for a custom build with a hot pressurized steam vessel:
+Ranked, for a custom build with a hot pressurized steam vessel.
 
-1. **⚠ Verify the OPV still RELIEVES.** The OPV was *torqued down* to raise its
-   setpoint so the boiler reaches steam temp. Critical check: it must still
-   **pop and relieve at a safe pressure** (~2–2.5 bar) — **not** torqued so far
-   it never opens. An OPV that can't relieve turns the boiler into an
-   un-protected pressure vessel. This is the #1 safety item. Ideally confirm
-   with a gauge; at minimum confirm it audibly relieves at its set pressure and
-   isn't bottomed out. A *dedicated non-adjustable safety relief* (like the
-   Pro's separate 2 bar safety valve) is the gold standard if the lone OPV is
-   doing both working-setpoint and safety duty.
-2. **Dry-fire / element burnout.** Steam-only boiler isn't refilled by brewing →
-   can run dry → element burnout (and a dry glowing element is a fire risk the
-   thermal fuse only *partially* catches). Mitigated today by careful use +
-   watching the level; the **level probe** is the real fix (§ LEVEL_SENSING.md).
-   Neither fuse nor PT1000 prevents the burnout itself.
-3. **Firmware hang → runaway heat.** If the Teensy hangs with the steam SSR on,
-   *only the mechanical OPV + thermal fuse* stop it (the `MAX_STEAM_TEMP` cut
-   needs a running main loop). **ADDED 2026-06-01:** a hardware watchdog
-   (Teensy 4.0 WDT, 2 s, fed every `loop()`) now hard-resets the MCU on a hang →
-   SSR pins go LOW and `boilerPrimed` clears (no heat until re-prime). The
-   mechanical OPV + thermal fuse remain the non-firmware backstops.
+**First, the pressure-vessel reality check (this is NOT a "bomb" scenario).**
+The boiler is a **repurposed OG Silvia boiler, which routinely sees 9–12 bar on
+the brew side** — so its body and seals are validated *far* above any steam
+pressure we run (2–3 bar). At these pressures, brass is nowhere near yield;
+failure modes are **slow weeps at a seal/joint**, not instantaneous rupture. The
+hazard from a failure is a **scald** (hot water/steam leak you'd notice), not an
+explosion. So OPV *precision* is not a safety necessity here: a **rough field
+adjustment** that gives good steam without needless blow-off at working temp is
+fine — no gauge, no one-off plumbing required. (Setting an OPV precisely would
+mean teeing in a gauge then removing it, which doesn't fit the assembly — not
+worth it for a relief whose exact crack pressure isn't safety-critical given the
+9-bar-rated vessel + the firmware/fuse temp caps.) Good practice is only that
+the OPV still **relieves** if pushed (isn't torqued fully shut) — and even a
+shut OPV wouldn't be catastrophic here, because `MAX_STEAM_TEMP` (160 °C) and the
+thermal fuse cap temperature, and the vessel holds 9 bar regardless.
+
+Real residual risks, ranked:
+
+1. **Dry-fire / element burnout — the actual #1.** Steam-only boiler isn't
+   refilled by brewing → can run dry → element burnout (a dry glowing element is
+   also a fire risk the thermal fuse only *partially* catches — it watches body
+   temp, lags the element). Neither fuse nor PT1000 prevents the burnout itself.
+   Mitigated today by careful use + watching the level; the **level probe** is
+   the real fix (§ LEVEL_SENSING.md). This — not over-pressure — is the genuine
+   hazard of the current state.
+2. **Firmware hang → runaway heat.** If the Teensy hung with the steam SSR on,
+   previously only the mechanical OPV + thermal fuse stopped it. **CLOSED
+   2026-06-01:** a hardware watchdog (Teensy 4.0 WDT, 2 s, fed every `loop()`)
+   hard-resets the MCU on a hang → SSR pins LOW, `boilerPrimed` clears (no heat
+   until re-prime).
+3. **Scald / hot-water routing.** Route the OPV/expansion dump safely (not at
+   the user). Returning ~100 °C water to a **plastic reservoir** can warp it —
+   use a heat-tolerant return or let it cool in the line.
 4. **Vacuum on cool-down** — seal stress; addressed by the vacuum breaker (5c).
-5. **Scald / hot-water routing.** Route the OPV/expansion dump safely (not at
-   the user). Note: returning ~100 °C water to a **plastic reservoir** can warp
-   it — use a heat-tolerant return or let it cool in the line.
-6. **Electrical.** Mains element in a water boiler — ensure solid earth bond,
-   element-seal integrity, and ideally a **GFCI/RCD** on the supply. The boiler
-   body will also be the conductivity-probe ground when fitted — bond it well.
+   (Suck-back largely blocked by our 3-way valves — see 5c.)
+5. **Electrical.** Mains element in a water boiler — solid earth bond,
+   element-seal integrity, ideally a **GFCI/RCD** on the supply. The boiler body
+   is also the conductivity-probe ground when fitted — bond it well.
 
-Backstops in place: tuned OPV (mechanical relief), hardware thermal fuse (fire),
-firmware `MAX_STEAM_TEMP` 160 °C cut (needs running firmware). Gaps to close:
-confirm OPV relief headroom (#1), add level sensing (#2), consider a hardware
-watchdog (#3) and a vacuum breaker (4/5c).
+Backstops in place: rough-set OPV (mechanical relief, relieves if pushed),
+hardware thermal fuse (fire), firmware `MAX_STEAM_TEMP` 160 °C cut, **hardware
+watchdog** (hang). The one real gap left to close: **level sensing** (#1) to
+prevent dry-fire element burnout. Over-pressure is well-covered by the 9-bar
+vessel + temp caps; precise OPV setting is unnecessary.
 
 ---
 
