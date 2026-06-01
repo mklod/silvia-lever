@@ -1,4 +1,4 @@
-// Last modified: 2026-05-29--1638
+// Last modified: 2026-06-01--1500
 /*
  * Silvia Lever Coffee Machine Controller
  * Hardware revision: dual PT1000 (MAX31865), dual SSR heaters,
@@ -21,7 +21,19 @@
 #include <ADS1115_WE.h>
 #include <Wire.h>
 #include <SparkFun_Qwiic_Scale_NAU7802_Arduino_Library.h>
+#include <Watchdog_t4.h>   // tonton81 WDT_T4 — github.com/tonton81/WDT_T4
+                           // (install into Arduino/libraries/; not in registry)
 #include "config.h"
+
+// Hardware watchdog (Teensy 4.0 WDT). Fed every loop(); if the main loop ever
+// stalls (hang, lockup) longer than WDT_TIMEOUT_S it hard-resets the MCU. On
+// reset the SSR pins go high-impedance then setup() drives them LOW, and
+// boilerPrimed (RAM) clears → no heating resumes until re-primed. This is the
+// last-line firmware safety against a runaway-heat hang with the steam SSR on
+// (mechanical OPV + thermal fuse remain the non-firmware backstops). See
+// OG_SILVIA_OPERATION.md §5d.
+WDT_T4<WDT1> wdt;
+const uint8_t WDT_TIMEOUT_S = 2;   // generous vs the ms-scale main loop
 
 // ─── Hardware objects ─────────────────────────────────────────────────────────
 // Two MAX31865 on shared SPI bus, each with its own CS pin
@@ -354,11 +366,19 @@ void setup() {
     Serial.println("NAU7802 OK");
   }
 
+  // Hardware watchdog — start LAST so the (blocking) sensor/bus init above
+  // can't trip it. From here, loop() must feed it within WDT_TIMEOUT_S or the
+  // MCU hard-resets into the safe boot state (SSRs LOW, boiler unprimed).
+  WDT_timings_t wdtCfg;
+  wdtCfg.timeout = WDT_TIMEOUT_S;
+  wdt.begin(wdtCfg);
+
   Serial.println("READY");
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 void loop() {
+  wdt.feed();                 // pet the watchdog every iteration
   processSerialCommands();
   updateSensors();
   updateSystemLogic();

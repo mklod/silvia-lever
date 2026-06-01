@@ -194,9 +194,10 @@ Ranked, for a custom build with a hot pressurized steam vessel:
    Neither fuse nor PT1000 prevents the burnout itself.
 3. **Firmware hang → runaway heat.** If the Teensy hangs with the steam SSR on,
    *only the mechanical OPV + thermal fuse* stop it (the `MAX_STEAM_TEMP` cut
-   needs a running main loop). So those mechanical safeties must be sound.
-   Consider a **hardware watchdog** that de-energises the SSRs if the main loop
-   stops servicing it.
+   needs a running main loop). **ADDED 2026-06-01:** a hardware watchdog
+   (Teensy 4.0 WDT, 2 s, fed every `loop()`) now hard-resets the MCU on a hang →
+   SSR pins go LOW and `boilerPrimed` clears (no heat until re-prime). The
+   mechanical OPV + thermal fuse remain the non-firmware backstops.
 4. **Vacuum on cool-down** — seal stress; addressed by the vacuum breaker (5c).
 5. **Scald / hot-water routing.** Route the OPV/expansion dump safely (not at
    the user). Note: returning ~100 °C water to a **plastic reservoir** can warp
