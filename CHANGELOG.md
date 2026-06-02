@@ -9,9 +9,35 @@
 > - PID tuning once thermoblock has reached setpoint a few times
 > - Profile system (Stage 8) after a few weeks of real-world use
 > - Autostart silvia on RPi boot (systemd user unit or labwc-pi autostart) so no tap needed at power-on
-> - **UI access to scale calibration + PID autotune** (deferred): these were intentionally pulled out of the home flow (gauge tap now opens a per-loop setpoint popup only). Need a discreet way back to them — e.g. a long-press on a gauge, a hidden corner tap, or a gear icon → the existing `settingsScreen`. Decide the gesture and wire it.
+> - **UI access to scale calibration + PID autotune** (deferred): these were intentionally pulled out of the home flow (gauge tap now opens a per-loop setpoint popup only). Need a discreet way back to them — e.g. a long-press on a gauge, a hidden corner tap, or a gear icon → the existing `settingsScreen`. Decide the gesture and wire it. **Note:** `settingsScreen` temp controls still show °C (not converted in the 2026-06-02 °F pass since it's unreachable) — convert to °F when wiring the re-entry gesture.
 > - **RC filter on the pump pot** (low priority now): adds analog smoothing to the pot reading. Less urgent than thought — manual takeover under the profile engine already feels responsive and smooth, noticeably better than plain manual mode. Revisit only if pot jitter shows up in a brew log.
 > - **Pi undervoltage during Teensy flash / silvia restart** (low priority): brief brownouts drop the Pi off-network mid-flash. 5V cable + supply are good; stable during normal runtime, so not a real concern operationally. Likely USB-port inrush when the Teensy re-enumerates, not the rail. Flashing recovers fine. Investigate (vcgencmd get_throttled, try powering Teensy separately) only if it becomes disruptive.
+
+## Build 2026-06-02--1314 — UX pass: °F, cyan/purple gauges, AUTO + auto-heat defaults
+
+Steam confirmed working end-to-end. Five changes (branch `boiler-stage9`):
+
+- **°F display.** UI now shows °F everywhere (gauges, brew-screen readout,
+  steam screen, per-gauge setpoint popup). Firmware stays °C; UI converts via
+  `cToF`/`fToC`. Setpoint popup steps 1 °F, clamps in °F (brew 140–230, steam
+  230–302), converts back to °C for `SET_TEMP`. (`settingsScreen` still °C —
+  it's unreachable now; convert when the re-entry gesture is wired.)
+- **Gauge colors:** thermoblock **cyan `#00bcd4`**, boiler **purple `#9b59b6`**
+  (was blue/orange). Setpoint popup + PRIME button recolored to match.
+- **Brew mode default AUTO:** firmware `autoBrewMode` defaults true; added as
+  telemetry field 17 so the UI `BREW: AUTO/MAN` button reflects firmware on
+  boot.
+- **Removed SCALE cell** from the debug row (weight still on the brew screen).
+  Row now: heat · brew mode · profile · pressure · pump.
+- **Auto-heat from cold boot, no manual prime:** firmware `boilerPrimed`
+  defaults **true** → heating proceeds from boot (staged boiler-first preheat)
+  with no PRIME step. Accepted dry-fire risk (user; minimal with conscientious
+  use + normal single-shot/single-steam workflow). PRIME button still fills
+  manually. Backstops retained: `MAX_STEAM_TEMP` + thermal fuse + watchdog;
+  level probe is the real fix.
+
+Telemetry now 17 fields. Flashed (primed=1, auto=1 verified), UI deployed
+(md5 match), QML validated headless.
 
 ## Build 2026-05-29--0126 — Stage 9 boiler (branch `boiler-stage9`, pre-hot-test)
 

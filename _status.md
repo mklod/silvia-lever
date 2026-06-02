@@ -3,6 +3,15 @@
 ## Current milestone
 **Alpha+ — boiler live (Stage 9), staged dual-heat verified.** Steam boiler enabled on branch `boiler-stage9` and confirmed working on hardware: cold-start staging (boiler first to steam temp, thermoblock inhibited until `BOILER_READY`, then thermoblock to setpoint), digitalWrite steam-SSR fix (pin 16 has no PWM), task-switch heater arbitration (BREW → boiler coasts via tick-mutex; STEAM → thermoblock hard-cut). OPV tuned. Pending: level probe (Silvia Pro probe ordered) for auto-fill / dry-fire safety; merge boiler-stage9 → master after extended steam testing. Thermoblock PID: Kp/Ki/Kd = 46.94/0.516/3155.89 (TL).
 
+## Session 2026-06-02 (13:14) — UX pass: °F units, cyan/purple gauges, auto-mode + auto-heat defaults
+- Steam confirmed working end-to-end by user. Five changes (all on boiler-stage9):
+  1. **Temp units °C → °F** — UI displays °F everywhere (gauges, brew-screen readout, steam screen, setpoint popup). Firmware stays °C; UI converts via cToF/fToC helpers; setpoint popup steps in 1 °F and clamps in °F (brew 140–230, steam 230–302), converts back to °C for SET_TEMP. (settingsScreen still °C but is currently unreachable — convert when a re-entry gesture is wired; see TODO.)
+  2. **Gauge colors** — thermoblock now **cyan #00bcd4**, boiler **purple #9b59b6** (was blue/orange). Setpoint popup + PRIME button recolored to match.
+  3. **Brew mode default AUTO** — firmware `autoBrewMode` defaults true; added as telemetry field 17 so the UI's BREW: AUTO/MAN button reflects firmware on boot (backend parses field 16).
+  4. **Removed SCALE cell** from the debug row (weight still on the brew screen). Row now: heat, brew mode, profile, pressure, pump.
+  5. **Auto-heat from cold boot without manual prime** — firmware `boilerPrimed` now defaults **true** (was false). Heating proceeds from boot (staged boiler-first preheat) with no PRIME step. Accepted dry-fire risk (user, minimal w/ conscientious use). PRIME button still fills manually. Backstops retained: MAX_STEAM_TEMP + thermal fuse + watchdog; level probe is the real fix.
+- Telemetry now 17 fields (added autoBrewMode). Flashed (verified primed=1, auto=1), UI deployed (md5 match), QML validated headless.
+
 ## Session 2026-06-01 (14:16) — Steam works: OPV tuned, staged dual-heat verified on hardware
 - **OPV adjustment solved the 99 °C dump.** Virgin steam-boiler OPV was set too low (relieved at ~0 bar → boiled off at 99 °C, never made steam). Torqued the OPV screw down to hold steam pressure → **zero steam / zero spitting on the boiler OPV water-return hose**, boiler climbed cleanly to **140 °C**, then the thermoblock reached its setpoint shortly after. Confirms the OPV setpoint caps boiler temp (saturation) per OG_SILVIA_OPERATION.md §5b.
 - **Cold-start staging verified:** boiler heats first (thermoblock inhibited) to its target, emits `BOILER_READY`, then the thermoblock is released and reaches setpoint. No 16.6 A parallel warmup.

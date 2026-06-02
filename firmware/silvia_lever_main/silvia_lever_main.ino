@@ -1,11 +1,11 @@
-// Last modified: 2026-06-01--1500
+// Last modified: 2026-06-01--1730
 /*
  * Silvia Lever Coffee Machine Controller
  * Hardware revision: dual PT1000 (MAX31865), dual SSR heaters,
  * dual 3-way valves, NAU7802 scale, ADS1115 pressure sensor, single pump.
  *
  * Serial telemetry (every TELEMETRY_INTERVAL ms):
- *   DATA:state,brewTemp,steamTemp,pressure,weight,pump%,valveThermoblock,valvePump,heaterBrew,heaterSteam,brewTimer,scalesTared,heatersEnabled,brewPhase,boilerPrimed,boilerPreheatComplete
+ *   DATA:state,brewTemp,steamTemp,pressure,weight,pump%,valveThermoblock,valvePump,heaterBrew,heaterSteam,brewTimer,scalesTared,heatersEnabled,brewPhase,boilerPrimed,boilerPreheatComplete,autoBrewMode
  *
  * Commands accepted from PC:
  *   SET_TEMP BREW <°C>     SET_TEMP STEAM <°C>
@@ -168,13 +168,17 @@ struct SystemData {
   // Runtime master switch for both SSRs. Default OFF so power-on never
   // starts heating; UI explicitly enables it before a hot test.
   bool heatersEnabled       = true;   // TEST MODE 2026-04-23: default ON; thermoblock seeks setpoint from boot
-  // Boiler dry-fire safety + Stage-9 staging (HEATING.md §5). boilerPrimed is
-  // RAM-only → false at every cold boot, so a fresh prime is required each
-  // power cycle before the boiler element can EVER energize. Until primed,
-  // NO heating happens at all (enforced in arbitrateHeaters). preheatComplete
+  // Boiler prime flag + Stage-9 staging (HEATING.md §5). preheatComplete
   // latches once the boiler first reaches its target, releasing the
   // thermoblock from cold-start inhibition.
-  bool boilerPrimed         = false;
+  //
+  // 2026-06-01: boilerPrimed now defaults TRUE — auto-heat from cold boot
+  // without the manual PRIME step (user request; accepted dry-fire risk —
+  // minimal with a conscientious user keeping the boiler watered, normal
+  // single-shot/single-steam workflow). The PRIME button still works to fill
+  // the boiler manually. Remaining dry-fire backstops: MAX_STEAM_TEMP cut +
+  // thermal fuse + watchdog. Real fix pending: level probe (LEVEL_SENSING.md).
+  bool boilerPrimed         = true;
   bool boilerPreheatComplete = false;
 
   // Brew timer (millis() timestamp of brew start; 0 = not brewing)
@@ -203,7 +207,7 @@ struct SystemData {
   // Auto vs manual brew mode. true = run the active profile (segment engine)
   // with manual-takeover by pot rotation. false = brew enters EXTRACT
   // immediately, pot drives PWM directly from t=0. Toggled via SET_AUTO_MODE.
-  bool         autoBrewMode  = false;   // default MANUAL — see SET_AUTO_MODE
+  bool         autoBrewMode  = true;    // default AUTO (run active profile) — see SET_AUTO_MODE
   // Brew profile engine state.
   uint8_t       activeProfile  = 0;   // index into BREW_PROFILES[]
   uint8_t       segmentIndex   = 0;   // current segment within the profile
@@ -1368,6 +1372,8 @@ void sendTelemetry() {
   Serial.print(sys.boilerPrimed ? 1 : 0);          // field 15
   Serial.print(",");
   Serial.print(sys.boilerPreheatComplete ? 1 : 0); // field 16
+  Serial.print(",");
+  Serial.print(sys.autoBrewMode ? 1 : 0);          // field 17
   Serial.println();
 }
 

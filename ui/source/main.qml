@@ -61,7 +61,12 @@ ApplicationWindow {
     // the user taps START and hangs around until they explicitly dismiss.
     property bool brewPrimingOpen: false
     property bool steamPrimingOpen: false
-    
+
+    // Temperature unit helpers. Firmware works in °C; the UI displays °F.
+    // Setpoints are adjusted in °F then converted back to °C for SET_TEMP.
+    function cToF(c) { return c * 9.0 / 5.0 + 32.0 }
+    function fToC(f) { return (f - 32.0) * 5.0 / 9.0 }
+
     CoffeeController {
         id: controller
         
@@ -228,16 +233,8 @@ ApplicationWindow {
                 onClicked: controller.cycleProfile()
             }
         }
-        Text {
-            Layout.fillWidth: true
-            horizontalAlignment: Text.AlignHCenter
-            color: "#ffffff"
-            font.pixelSize: 14
-            font.family: "Consolas"
-            text: "SCALE: " + (isFinite(window.currentWeight)
-                                ? (window.currentWeight >= 0 ? " " : "") + window.currentWeight.toFixed(2) + " g"
-                                : "—")
-        }
+        // SCALE cell removed 2026-06-01 — weight shows on the brew screen; the
+        // debug row keeps heat, brew mode, profile, pressure, pump.
         Text {
             Layout.fillWidth: true
             horizontalAlignment: Text.AlignHCenter
@@ -335,7 +332,7 @@ ApplicationWindow {
             height: spCol.implicitHeight + 64
             color: "#16191e"
             radius: 18
-            border.color: setpointOverlay.isSteam ? "#e67e22" : "#2290e7"
+            border.color: setpointOverlay.isSteam ? "#9b59b6" : "#00bcd4"
             border.width: 2
             MouseArea { anchors.fill: parent }  // swallow taps inside the card
 
@@ -348,7 +345,7 @@ ApplicationWindow {
                 Text {
                     Layout.alignment: Qt.AlignHCenter
                     text: setpointOverlay.isSteam ? "STEAM BOILER" : "THERMOBLOCK"
-                    color: setpointOverlay.isSteam ? "#e67e22" : "#2290e7"
+                    color: setpointOverlay.isSteam ? "#9b59b6" : "#00bcd4"
                     font { pixelSize: 20; bold: true; letterSpacing: 1 }
                 }
                 Text {
@@ -371,11 +368,16 @@ ApplicationWindow {
                         MouseArea {
                             id: minusArea
                             anchors.fill: parent
+                            // Step 1 °F; clamp in °F (brew 140–230, steam 230–302),
+                            // convert back to °C for the firmware.
                             onClicked: {
-                                if (setpointOverlay.isSteam)
-                                    window.steamTargetTemp = Math.max(110.0, Math.round(window.steamTargetTemp - 1))
-                                else
-                                    window.brewTargetTemp = Math.max(60.0, Math.round(window.brewTargetTemp - 1))
+                                if (setpointOverlay.isSteam) {
+                                    var sf = Math.max(230, Math.round(window.cToF(window.steamTargetTemp)) - 1)
+                                    window.steamTargetTemp = window.fToC(sf)
+                                } else {
+                                    var bf = Math.max(140, Math.round(window.cToF(window.brewTargetTemp)) - 1)
+                                    window.brewTargetTemp = window.fToC(bf)
+                                }
                                 controller.setTemperatures(window.brewTargetTemp, window.steamTargetTemp)
                             }
                         }
@@ -384,7 +386,7 @@ ApplicationWindow {
                     Text {
                         Layout.preferredWidth: 150
                         horizontalAlignment: Text.AlignHCenter
-                        text: setpointOverlay.curVal.toFixed(0) + "°C"
+                        text: Math.round(window.cToF(setpointOverlay.curVal)) + "°F"
                         color: "#ffffff"; font { pixelSize: 48; bold: true }
                     }
 
@@ -399,10 +401,13 @@ ApplicationWindow {
                             id: plusArea
                             anchors.fill: parent
                             onClicked: {
-                                if (setpointOverlay.isSteam)
-                                    window.steamTargetTemp = Math.min(150.0, Math.round(window.steamTargetTemp + 1))
-                                else
-                                    window.brewTargetTemp = Math.min(110.0, Math.round(window.brewTargetTemp + 1))
+                                if (setpointOverlay.isSteam) {
+                                    var sf = Math.min(302, Math.round(window.cToF(window.steamTargetTemp)) + 1)
+                                    window.steamTargetTemp = window.fToC(sf)
+                                } else {
+                                    var bf = Math.min(230, Math.round(window.cToF(window.brewTargetTemp)) + 1)
+                                    window.brewTargetTemp = window.fToC(bf)
+                                }
                                 controller.setTemperatures(window.brewTargetTemp, window.steamTargetTemp)
                             }
                         }
@@ -594,12 +599,12 @@ ApplicationWindow {
                             maxValue: Math.max(window.brewTempActual, window.brewTargetTemp, 1)
                             value: window.brewTempActual
                             interactive: false
-                            progressColor: "#2290e7"
+                            progressColor: "#00bcd4"   // cyan — thermoblock
                             trackColor: "#34495e"
                             startAngle: 30.0; endAngle: 330; rotation: 180
                             Text {
                                 anchors.centerIn: parent
-                                text: window.brewTempActual.toFixed(1) + "°C"
+                                text: window.cToF(window.brewTempActual).toFixed(0) + "°F"
                                 color: window.brewTempActual > window.brewTargetTemp ? "#ff6b6b" : "white"
                                 font.pixelSize: 26; font.bold: true; rotation: 180
                             }
@@ -687,12 +692,12 @@ ApplicationWindow {
                             maxValue: Math.max(window.steamTempActual, window.steamTargetTemp, 1)
                             value: window.steamTempActual
                             interactive: false
-                            progressColor: window.boilerPrimed ? "#e67e22" : "#555a63"
+                            progressColor: window.boilerPrimed ? "#9b59b6" : "#555a63"  // purple — boiler
                             trackColor: "#34495e"
                             startAngle: 30.0; endAngle: 330; rotation: 180
                             Text {
                                 anchors.centerIn: parent
-                                text: window.steamTempActual.toFixed(1) + "°C"
+                                text: window.cToF(window.steamTempActual).toFixed(0) + "°F"
                                 color: window.steamTempActual > window.steamTargetTemp ? "#ff6b6b" : "white"
                                 font.pixelSize: 26; font.bold: true; rotation: 180
                             }
@@ -744,16 +749,16 @@ ApplicationWindow {
                                 radius: 10
                                 property bool filling: window.currentState === "PRIMING_STEAM"
                                 color: primeArea.pressed ? Qt.rgba(1,1,1,0.15) : "transparent"
-                                border.color: window.boilerPrimed ? "#27ae60" : "#e67e22"
+                                border.color: window.boilerPrimed ? "#27ae60" : "#9b59b6"
                                 border.width: 2
                                 opacity: connectionStatus.connected ? 1.0 : 0.3
 
-                                // Amber glow pulse while not yet primed.
+                                // Purple glow pulse while not yet primed.
                                 Rectangle {
                                     id: primeGlow
                                     anchors.fill: parent
                                     radius: parent.radius
-                                    color: "#e67e22"
+                                    color: "#9b59b6"
                                     visible: !window.boilerPrimed
                                     opacity: 0.0
                                     SequentialAnimation on opacity {
@@ -1081,7 +1086,7 @@ ApplicationWindow {
                             Text {
                                 Layout.alignment: Qt.AlignHCenter
                                 horizontalAlignment: Text.AlignHCenter
-                                text: window.brewTempActual.toFixed(1) + "°C"
+                                text: window.cToF(window.brewTempActual).toFixed(0) + "°F"
                                 color: "#ffffff"
                                 font { pixelSize: 48; bold: true; family: "Consolas" }
                             }
@@ -1396,7 +1401,7 @@ ApplicationWindow {
                 }
                 
                 Text {
-                    text: window.steamTempActual.toFixed(1) + "°C"
+                    text: window.cToF(window.steamTempActual).toFixed(0) + "°F"
                     color: "white"
                     font.pixelSize: 20
                     Layout.alignment: Qt.AlignHCenter
@@ -1414,7 +1419,7 @@ ApplicationWindow {
                     spacing: 20
                     
                     Text {
-                        text: "Heating to " + window.steamTargetTemp.toFixed(0) + "°C..."
+                        text: "Heating to " + window.cToF(window.steamTargetTemp).toFixed(0) + "°F..."
                         color: "#f39c12"
                         font.pixelSize: 14
                         Layout.alignment: Qt.AlignHCenter

@@ -395,6 +395,13 @@ class CoffeeController(QObject):
                     self._boiler_preheated = boiler_preheated
                     self.boilerPreheatedChanged.emit(boiler_preheated)
 
+                # Auto-brew mode (field 17 — firmware default now AUTO). Keeps
+                # the UI's BREW: AUTO/MAN button in sync with firmware truth.
+                auto_mode = bool(int(parts[16])) if len(parts) > 16 else False
+                if auto_mode != self._auto_brew_mode:
+                    self._auto_brew_mode = auto_mode
+                    self.autoBrewModeChanged.emit(auto_mode)
+
                 # Safety checks on both temperatures
                 if not self.safety.check_temperature(brew_temp):
                     return
