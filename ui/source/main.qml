@@ -619,8 +619,8 @@ ApplicationWindow {
                                     running: brewGaugeNum.over
                                     loops: Animation.Infinite
                                     alwaysRunToEnd: true
-                                    NumberAnimation { to: 0.35; duration: 450 }
-                                    NumberAnimation { to: 1.0; duration: 450 }
+                                    NumberAnimation { to: 0.55; duration: 1500; easing.type: Easing.InOutSine }
+                                    NumberAnimation { to: 1.0; duration: 1500; easing.type: Easing.InOutSine }
                                 }
                                 onOverChanged: if (!over) opacity = 1.0
                             }
@@ -727,8 +727,8 @@ ApplicationWindow {
                                     running: boilerGaugeNum.over
                                     loops: Animation.Infinite
                                     alwaysRunToEnd: true
-                                    NumberAnimation { to: 0.35; duration: 450 }
-                                    NumberAnimation { to: 1.0; duration: 450 }
+                                    NumberAnimation { to: 0.55; duration: 1500; easing.type: Easing.InOutSine }
+                                    NumberAnimation { to: 1.0; duration: 1500; easing.type: Easing.InOutSine }
                                 }
                                 onOverChanged: if (!over) opacity = 1.0
                             }
