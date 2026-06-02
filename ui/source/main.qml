@@ -596,17 +596,33 @@ ApplicationWindow {
                             Layout.alignment: Qt.AlignHCenter
                             width: 150; height: 150
                             minValue: 0
-                            maxValue: Math.max(window.brewTempActual, window.brewTargetTemp, 1)
-                            value: window.brewTempActual
+                            // Setpoint sits ~83% around the arc (×1.2 headroom),
+                            // so the fill stops at the tick and overshoot shows
+                            // past it. Arc value clamped to scale top.
+                            maxValue: Math.max(window.brewTargetTemp * 1.2, 1)
+                            value: Math.min(window.brewTempActual, maxValue)
+                            tickValue: window.brewTargetTemp
+                            tickColor: "#ffffff"
                             interactive: false
                             progressColor: "#00bcd4"   // cyan — thermoblock
                             trackColor: "#34495e"
                             startAngle: 30.0; endAngle: 330; rotation: 180
                             Text {
+                                id: brewGaugeNum
+                                property bool over: window.brewTempActual > window.brewTargetTemp
                                 anchors.centerIn: parent
                                 text: window.cToF(window.brewTempActual).toFixed(0) + "°F"
-                                color: window.brewTempActual > window.brewTargetTemp ? "#ff6b6b" : "white"
+                                // Overshoot: orange + pulsing (not red).
+                                color: over ? "#ff9500" : "white"
                                 font.pixelSize: 26; font.bold: true; rotation: 180
+                                SequentialAnimation on opacity {
+                                    running: brewGaugeNum.over
+                                    loops: Animation.Infinite
+                                    alwaysRunToEnd: true
+                                    NumberAnimation { to: 0.35; duration: 450 }
+                                    NumberAnimation { to: 1.0; duration: 450 }
+                                }
+                                onOverChanged: if (!over) opacity = 1.0
                             }
                             MouseArea {
                                 anchors.fill: parent
@@ -689,17 +705,32 @@ ApplicationWindow {
                             Layout.alignment: Qt.AlignHCenter
                             width: 150; height: 150
                             minValue: 0
-                            maxValue: Math.max(window.steamTempActual, window.steamTargetTemp, 1)
-                            value: window.steamTempActual
+                            // ×1.2 headroom so setpoint lands at the tick with
+                            // room to show steam overshoot past it.
+                            maxValue: Math.max(window.steamTargetTemp * 1.2, 1)
+                            value: Math.min(window.steamTempActual, maxValue)
+                            tickValue: window.steamTargetTemp
+                            tickColor: "#ffffff"
                             interactive: false
                             progressColor: window.boilerPrimed ? "#9b59b6" : "#555a63"  // purple — boiler
                             trackColor: "#34495e"
                             startAngle: 30.0; endAngle: 330; rotation: 180
                             Text {
+                                id: boilerGaugeNum
+                                property bool over: window.steamTempActual > window.steamTargetTemp
                                 anchors.centerIn: parent
                                 text: window.cToF(window.steamTempActual).toFixed(0) + "°F"
-                                color: window.steamTempActual > window.steamTargetTemp ? "#ff6b6b" : "white"
+                                // Overshoot: orange + pulsing (not red).
+                                color: over ? "#ff9500" : "white"
                                 font.pixelSize: 26; font.bold: true; rotation: 180
+                                SequentialAnimation on opacity {
+                                    running: boilerGaugeNum.over
+                                    loops: Animation.Infinite
+                                    alwaysRunToEnd: true
+                                    NumberAnimation { to: 0.35; duration: 450 }
+                                    NumberAnimation { to: 1.0; duration: 450 }
+                                }
+                                onOverChanged: if (!over) opacity = 1.0
                             }
                             MouseArea {
                                 anchors.fill: parent

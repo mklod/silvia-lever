@@ -134,6 +134,33 @@ Item {
     property color handleColor: "#fefefe"
 
     /*!
+        \qmlproperty real CircularSlider::tickValue
+        Draws a radial tick mark across the track at this value. Set to NaN
+        (the default) to disable. Used to mark the setpoint so the progress
+        arc can stop short of full, leaving headroom that makes overshoot
+        visible past the tick.
+    */
+    property real tickValue: NaN
+
+    /*!
+        \qmlproperty color CircularSlider::tickColor
+        Fill color of the setpoint tick mark.
+    */
+    property color tickColor: "#ffffff"
+
+    /*!
+        \qmlproperty int CircularSlider::tickWidth
+        Width (thickness) of the setpoint tick mark.
+    */
+    property int tickWidth: 4
+
+    /*!
+        \qmlproperty int CircularSlider::tickOverhang
+        How far (px) the tick extends beyond each edge of the track.
+    */
+    property int tickOverhang: 6
+
+    /*!
         \qmlproperty CircularSlider::stepSize
         This property holds the step size. The default value is 0.0
         The step size determines the amount by which the slider's value is increased and decreased when interacted.
@@ -296,6 +323,42 @@ Item {
                 startAngle: control.startAngle - 90
                 sweepAngle: control.angle - control.startAngle
             }
+        }
+    }
+
+    // Setpoint tick mark — a radial dash across the track at tickValue.
+    // Positioned with the same orbit transform as the handle so it lands
+    // exactly on the arc at the mapped angle.
+    Item {
+        id: tickItem
+        visible: !isNaN(control.tickValue)
+        z: 3
+        width: control.tickWidth
+        height: control.trackWidth + control.tickOverhang * 2
+        x: control.width / 2 - width / 2
+        y: control.height / 2 - height / 2
+        antialiasing: true
+
+        readonly property real tickAngle: internal.mapFromValue(
+            control.minValue, control.maxValue,
+            control.startAngle, control.endAngle, control.tickValue)
+
+        transform: [
+            Translate {
+                y: -(Math.min(control.width, control.height) / 2) + Math.max(control.trackWidth, control.progressWidth) / 2
+            },
+            Rotation {
+                angle: tickItem.tickAngle
+                origin.x: tickItem.width / 2
+                origin.y: tickItem.height / 2
+            }
+        ]
+
+        Rectangle {
+            anchors.fill: parent
+            color: control.tickColor
+            radius: 1
+            antialiasing: true
         }
     }
 

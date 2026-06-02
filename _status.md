@@ -3,6 +3,12 @@
 ## Current milestone
 **Alpha+ — boiler live (Stage 9), staged dual-heat verified.** Steam boiler enabled on branch `boiler-stage9` and confirmed working on hardware: cold-start staging (boiler first to steam temp, thermoblock inhibited until `BOILER_READY`, then thermoblock to setpoint), digitalWrite steam-SSR fix (pin 16 has no PWM), task-switch heater arbitration (BREW → boiler coasts via tick-mutex; STEAM → thermoblock hard-cut). OPV tuned. Pending: level probe (Silvia Pro probe ordered) for auto-fill / dry-fire safety; merge boiler-stage9 → master after extended steam testing. Thermoblock PID: Kp/Ki/Kd = 46.94/0.516/3155.89 (TL).
 
+## Session 2026-06-02 (13:35) — Gauge setpoint tick + overshoot indication
+- **Setpoint tick mark on both gauges.** Added `tickValue`/`tickColor`/`tickWidth`/`tickOverhang` properties to `CircularSlider.qml`; draws a radial white dash across the track at the setpoint, positioned with the same orbit transform as the handle so it lands exactly on the arc.
+- **Arc leaves overshoot headroom.** Gauge `maxValue` changed from `max(actual, target, 1)` to `target * 1.2`, so at setpoint the fill stops at the tick (~83 % of the arc) and overshoot visibly pushes the arc past the tick. `value` clamped to `maxValue` so a large overshoot pins at the scale top instead of overrunning the track.
+- **Overshoot number: orange + pulsing (not red).** When actual > target the gauge number turns **orange #ff9500** and pulses opacity 1.0↔0.35 (450 ms, infinite) — the same "vibratey" nag style as the PRIME glow. Resets to solid white when back at/under setpoint.
+- Deployed to Pi 1 (md5 match local), QML validated headless (offscreen+mock, no parse errors), Pi rebooted → UI relaunched clean.
+
 ## Session 2026-06-02 (13:14) — UX pass: °F units, cyan/purple gauges, auto-mode + auto-heat defaults
 - Steam confirmed working end-to-end by user. Five changes (all on boiler-stage9):
   1. **Temp units °C → °F** — UI displays °F everywhere (gauges, brew-screen readout, steam screen, setpoint popup). Firmware stays °C; UI converts via cToF/fToC helpers; setpoint popup steps in 1 °F and clamps in °F (brew 140–230, steam 230–302), converts back to °C for SET_TEMP. (settingsScreen still °C but is currently unreachable — convert when a re-entry gesture is wired; see TODO.)
