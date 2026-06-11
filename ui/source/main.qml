@@ -1,3 +1,4 @@
+// Last modified: 2026-06-10--2240
 import QtQuick 2.15
 import QtQuick.Window 2.15
 import QtQuick.Controls
@@ -1014,10 +1015,13 @@ ApplicationWindow {
                          (window.currentState === "HEATING_BREW" && window.scalesSettled) ||
                          window.currentState === "BREWING")
                 z: 5
+                // Single tap only STARTS a brew (when ready). Stopping a running
+                // brew requires a deliberate quick DOUBLE-tap (onDoubleClicked) so
+                // a stray touch-screen ghost tap during a long brew can't end the
+                // shot. Incident 2026-06-10: a ~2 min manual brew stopped at 46 s
+                // from an unintended single tap (hand near the capacitive screen).
                 onClicked: {
-                    if (window.currentState === "BREWING") {
-                        controller.stopBrew()
-                    } else {
+                    if (window.currentState !== "BREWING") {
                         // Start brew: clear charts, begin
                         coffeeChart.dataPoints   = []
                         pressureChart.dataPoints = []
@@ -1028,6 +1032,12 @@ ApplicationWindow {
                         coffeeChart.requestPaint()
                         pressureChart.requestPaint()
                         controller.beginBrew()
+                    }
+                    // While BREWING a single tap is ignored — double-tap to stop.
+                }
+                onDoubleClicked: {
+                    if (window.currentState === "BREWING") {
+                        controller.stopBrew()
                     }
                 }
             }
@@ -1099,6 +1109,17 @@ ApplicationWindow {
                                 text: window.brewTime
                                 color: "#ffffff"
                                 font { pixelSize: 48; bold: true; family: "Consolas" }
+                            }
+                            // Affordance hint: how to start / stop. Stopping needs
+                            // a double-tap so a stray touch can't end a long brew.
+                            Text {
+                                Layout.alignment: Qt.AlignHCenter
+                                horizontalAlignment: Text.AlignHCenter
+                                text: window.currentState === "BREWING" ? "double-tap to stop"
+                                      : ((window.currentState === "HEATING_BREW" && window.scalesSettled)
+                                         ? "tap to start" : "")
+                                color: "#888888"
+                                font.pixelSize: 13
                             }
                         }
 

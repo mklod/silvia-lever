@@ -1,3 +1,4 @@
+# Last modified: 2026-06-10--2240
 from PyQt6.QtCore import QObject, pyqtSignal, pyqtSlot, QTimer
 import config
 from safety_manager import SafetyManager
@@ -78,6 +79,9 @@ class CoffeeController(QObject):
         
         # Brew timer
         self._brew_start_time = None
+        self._brewing = False  # True only between beginBrew and stopBrew; gates
+                               # duration logging so a stop after the brew already
+                               # ended doesn't log a bogus cumulative session.
         self._timer = QTimer()
         self._timer.timeout.connect(self._update_brew_time)
         
@@ -204,6 +208,7 @@ class CoffeeController(QObject):
         # Step 4: Timer begins counting
         import time
         self._brew_start_time = time.time()
+        self._brewing = True
         self._timer.start(500)
         
         # # Step 5: Live data reporting begins (charts already updating via telemetry)
@@ -211,21 +216,28 @@ class CoffeeController(QObject):
         
     @pyqtSlot()
     def stopBrew(self):
+        # Always send STOP to the firmware (idempotent + safe — covers leaving
+        # the screen via the back arrow regardless of UI state).
         if self.connected:
             self.serial.send_command("STOP")
             self.logger.log_command("STOP")
-            
+
         self.temp_controller.set_mode("IDLE")
         self.safety.stop_brew_timer()
         self._timer.stop()
-        
-        # Log brew session if we have data
-        if self._brew_start_time:
+
+        # Log the session ONLY if a brew was actually running. Without this
+        # guard, a second stopBrew (e.g. back arrow after the brew already
+        # ended) re-logged a bogus BREW_COMPLETE whose duration kept growing
+        # because _brew_start_time is never reset (46s then 54s for one shot —
+        # incident 2026-06-10).
+        if self._brewing and self._brew_start_time:
             import time
             duration = int(time.time() - self._brew_start_time)
             self.logger.log_brew_session(duration, 0, 0)  # TODO: Add actual weight/pressure
-            
-        # Keep brew time displayed, don't reset to 00:00
+        self._brewing = False
+
+        # Keep brew time displayed (frozen at final), don't reset to 00:00.
         # self._brew_start_time = None
         # self.brewTimeChanged.emit("00:00")
         
