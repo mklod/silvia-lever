@@ -1011,34 +1011,25 @@ ApplicationWindow {
                 anchors.rightMargin: 80
                 anchors.bottom: parent.bottom
                 anchors.bottomMargin: 150
-                enabled: connectionStatus.connected && (
-                         (window.currentState === "HEATING_BREW" && window.scalesSettled) ||
-                         window.currentState === "BREWING")
+                // Start-only. This big area is DISABLED while BREWING so a stray
+                // tap anywhere on the screen can't end a shot. Stopping is a
+                // deliberate single tap on the timer clock (see brewStopArea).
+                // Incident 2026-06-10: a ~2 min manual brew stopped at 46 s from
+                // an unintended tap on the old full-screen stop zone.
+                enabled: connectionStatus.connected &&
+                         window.currentState === "HEATING_BREW" && window.scalesSettled
                 z: 5
-                // Single tap only STARTS a brew (when ready). Stopping a running
-                // brew requires a deliberate quick DOUBLE-tap (onDoubleClicked) so
-                // a stray touch-screen ghost tap during a long brew can't end the
-                // shot. Incident 2026-06-10: a ~2 min manual brew stopped at 46 s
-                // from an unintended single tap (hand near the capacitive screen).
                 onClicked: {
-                    if (window.currentState !== "BREWING") {
-                        // Start brew: clear charts, begin
-                        coffeeChart.dataPoints   = []
-                        pressureChart.dataPoints = []
-                        coffeeChart.startTime    = null
-                        pressureChart.startTime  = null
-                        coffeeChart.maxTime      = 40
-                        pressureChart.maxTime    = 40
-                        coffeeChart.requestPaint()
-                        pressureChart.requestPaint()
-                        controller.beginBrew()
-                    }
-                    // While BREWING a single tap is ignored — double-tap to stop.
-                }
-                onDoubleClicked: {
-                    if (window.currentState === "BREWING") {
-                        controller.stopBrew()
-                    }
+                    // Start brew: clear charts, begin
+                    coffeeChart.dataPoints   = []
+                    pressureChart.dataPoints = []
+                    coffeeChart.startTime    = null
+                    pressureChart.startTime  = null
+                    coffeeChart.maxTime      = 40
+                    pressureChart.maxTime    = 40
+                    coffeeChart.requestPaint()
+                    pressureChart.requestPaint()
+                    controller.beginBrew()
                 }
             }
 
@@ -1094,6 +1085,7 @@ ApplicationWindow {
                         // its parent, which fills the brew screen, so the
                         // horizontalCenter aligns with window center)
                         ColumnLayout {
+                            id: brewTimeBlock
                             anchors.horizontalCenter: parent.horizontalCenter
                             anchors.verticalCenter: parent.verticalCenter
                             spacing: 2
@@ -1107,20 +1099,36 @@ ApplicationWindow {
                                 Layout.alignment: Qt.AlignHCenter
                                 horizontalAlignment: Text.AlignHCenter
                                 text: window.brewTime
-                                color: "#ffffff"
+                                // Clock glows amber while brewing to signal it's
+                                // the tap-to-stop target.
+                                color: window.currentState === "BREWING" ? "#ffb74d" : "#ffffff"
                                 font { pixelSize: 48; bold: true; family: "Consolas" }
                             }
-                            // Affordance hint: how to start / stop. Stopping needs
-                            // a double-tap so a stray touch can't end a long brew.
+                            // Affordance hint: how to start / stop. Stop = a single
+                            // tap on the clock only (not the whole screen) so a
+                            // stray touch can't end a long brew.
                             Text {
                                 Layout.alignment: Qt.AlignHCenter
                                 horizontalAlignment: Text.AlignHCenter
-                                text: window.currentState === "BREWING" ? "double-tap to stop"
+                                text: window.currentState === "BREWING" ? "tap clock to stop"
                                       : ((window.currentState === "HEATING_BREW" && window.scalesSettled)
                                          ? "tap to start" : "")
                                 color: "#888888"
                                 font.pixelSize: 13
                             }
+                        }
+
+                        // Tap-to-stop target: a focused MouseArea over the clock,
+                        // enabled only while BREWING. Replaces the old full-screen
+                        // stop zone so a stray tap elsewhere can't end the shot.
+                        MouseArea {
+                            id: brewStopArea
+                            anchors.centerIn: brewTimeBlock
+                            width: brewTimeBlock.width + 90
+                            height: brewTimeBlock.height + 36
+                            z: 30
+                            enabled: connectionStatus.connected && window.currentState === "BREWING"
+                            onClicked: controller.stopBrew()
                         }
 
                         // ── Thermoblock temp — right column ─────────────
