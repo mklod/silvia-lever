@@ -1,16 +1,18 @@
-# Offscreen screenshot harness — renders every UI screen/state to PNG so the
-# real QML (not a mockup) can be dropped into a design tool. Run from ui/source:
-#   QT_QPA_PLATFORM=offscreen QT_QUICK_BACKEND=software python3 _render_screens.py [outdir]
+# Offscreen screenshot harness — renders the home + brew UI screens from the
+# REAL QML (not a mockup) to PNGs for design iteration. Screen 06 is rendered
+# with an ACTUAL historical brew (from brew_logs/) injected into the charts —
+# this doubles as a proof-of-concept for a "replay / brew preview" feature.
+#
+# Run from ui/source:
+#   QT_QPA_PLATFORM=offscreen python3 _render_screens.py [outdir] [brew_log.json]
 # Temporary tooling; safe to delete.
-import os, sys
+import os, sys, glob, json
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 os.environ.setdefault("QT_QUICK_BACKEND", "software")
-# The offscreen plugin has no GPU context, so it rasterizes in software.
-# QtQuick.Shapes DO render in software, but their `layer.enabled` (FBO) does
-# not — a layered Shape is dropped entirely (gauge arcs vanish). We disable the
-# Shape layers at runtime before each grab so the arcs paint (loses only MSAA
-# antialiasing, irrelevant for design references).
+# Offscreen rasterizes in software. QtQuick.Shapes paint in software but their
+# layer.enabled FBO does not (gauge arcs vanish) — we disable those layers
+# before each grab (loses only MSAA antialiasing).
 
 import platform_shim
 platform_shim.apply_qt_env()
@@ -20,7 +22,7 @@ config.USE_MOCK_SERIAL = True   # never touch the real Teensy / live serial
 from PyQt6.QtGui import QGuiApplication
 from PyQt6.QtQml import (qmlRegisterType, QQmlApplicationEngine, QQmlExpression,
                          QQmlEngine, QQmlProperty)
-from PyQt6.QtCore import QUrl, QEventLoop, QTimer
+from PyQt6.QtCore import QUrl, QEventLoop, QTimer, QObject
 from PyQt6.QtQuick import QQuickWindow
 from PyQt6 import sip
 from qml_backend import CoffeeController
@@ -39,9 +41,6 @@ root = engine.rootObjects()[0]
 win = sip.cast(root, QQuickWindow)
 win.resize(960, 540)
 win.show()
-
-# The object's own creation context — this is where the QML ids (window,
-# stackView, connectionStatus, brewScreen, …) are registered.
 CTX = QQmlEngine.contextForObject(root)
 
 
@@ -51,30 +50,37 @@ def pump(ms):
     loop.exec()
 
 
-def qml(expr):
-    e = QQmlExpression(CTX, root, expr)
+def qml(expr, ctx=None, scope=None):
+    e = QQmlExpression(ctx or CTX, scope or root, expr)
     v = e.evaluate()
+    if isinstance(v, tuple):        # PyQt6 returns (value, isUndefined)
+        v = v[0]
     if e.hasError():
         print("QML ERR:", expr, "->", e.error().toString())
     return v
 
 
-from PyQt6.QtCore import QObject
-
-
 def disable_shape_layers():
-    # Turn off layer.enabled on every QtQuick Shape so the software renderer
-    # paints the arcs (FBO-backed layers are dropped in software).
-    n = 0
     for ch in root.findChildren(QObject):
         if ch.metaObject().className() == "QQuickShape":
             QQmlProperty.write(ch, "layer.enabled", False)
-            n += 1
-    return n
 
 
-# Baseline mock scene values, re-applied before every grab so incoming mock
-# telemetry can't overwrite the staged state.
+# ── Let the mock connect, then FREEZE its data feed so staged state sticks ────
+pump(600)
+ctrl = next((c for c in root.findChildren(QObject)
+             if c.metaObject().className() == "CoffeeController"), None)
+if ctrl is not None and hasattr(ctrl, "serial"):
+    try:
+        ctrl.serial.stop()
+        print("mock serial stopped")
+    except Exception as e:
+        print("could not stop mock serial:", e)
+else:
+    print("WARNING: controller not found; mock may overwrite staged state")
+pump(50)
+
+# Baseline scene values.
 BASE = [
     'connectionStatus.connected = true',
     'window.boilerPrimed = true',
@@ -90,67 +96,98 @@ BASE = [
     'window.currentWeight = 0.0',
     'window.currentPumpPower = 0.0',
     'window.scalesSettled = true',
+    'window.scalesTared = true',
+    'window.brewDisplayFrozen = false',
     'window.setpointPopup = ""',
     'window.flushActive = false',
     'window.steamActive = false',
     'window.currentState = "IDLE"',
 ]
+for ex in BASE:
+    qml(ex)
 
 
 def grab(name, extra=()):
-    pump(120)                       # let mock tick + any pending render settle
-    for ex in BASE:
-        qml(ex)
     for ex in extra:
-        qml(ex)                     # stage this shot (overrides BASE), synchronous
-    disable_shape_layers()          # let the gauge arcs paint in software
-    img = win.grabWindow()          # synchronous render+grab; no pump after staging
+        qml(ex)
+    disable_shape_layers()
+    pump(60)                        # settle bindings (mock is stopped — safe)
+    disable_shape_layers()
+    img = win.grabWindow()
     path = os.path.join(OUTDIR, name)
     img.save(path)
-    print("saved", path, img.width(), "x", img.height())
+    print("saved", path)
 
 
-# ── Home + overlays (initial item) ───────────────────────────────────────────
+# ── 01–04 Home + overlays ────────────────────────────────────────────────────
 grab("01_home_idle.png")
 grab("02_home_setpoint_brew.png",  ['window.setpointPopup = "brew"'])
+qml('window.setpointPopup = ""')
 grab("03_home_setpoint_steam.png", ['window.setpointPopup = "steam"'])
-grab("04_home_unprimed.png",       ['window.setpointPopup = ""', 'window.boilerPrimed = false'])
+qml('window.setpointPopup = ""')
+grab("04_home_unprimed.png",       ['window.boilerPrimed = false'])
+qml('window.boilerPrimed = true')
 
-# ── Brew screen: ready-to-start, then brewing ────────────────────────────────
+# ── 05 Brew screen, ready to start ───────────────────────────────────────────
 qml('stackView.push(brewScreen, StackView.Immediate)')
 grab("05_brew_ready.png", [
     'window.currentState = "HEATING_BREW"',
-    'window.scalesSettled = true',
     'window.brewTime = "00:00"',
     'window.brewTempActual = 93.0',
 ])
-grab("06_brew_brewing.png", [
-    'window.currentState = "BREWING"',
-    'window.brewTime = "00:23"',
-    'window.currentWeight = 22.4',
-    'window.currentPressure = 9.0',
-    'window.currentPumpPower = 80',
-    'window.brewTempActual = 93.2',
-])
 
-# ── Steam screen ─────────────────────────────────────────────────────────────
-qml('stackView.push(steamScreen, StackView.Immediate)')
-grab("07_steam_heating.png", [
-    'window.currentState = "HEATING_STEAM"',
-    'window.steamTempActual = 118.0',
-])
-grab("08_steam_ready.png", [
-    'window.currentState = "STEAMING"',
-    'window.steamActive = true',
-    'window.steamTempActual = 130.0',
-])
+# ── 06 Brew screen, BREWING, with a REAL historical brew on the charts ────────
+LOGS = os.path.join(SRC, "brew_logs")
+log_arg = sys.argv[2] if len(sys.argv) > 2 else "brew_2026-06-09_19-16-20.json"
+log_path = os.path.join(LOGS, log_arg)
+if not os.path.exists(log_path):
+    cands = sorted(glob.glob(os.path.join(LOGS, "*.json")))
+    log_path = cands[-1] if cands else None
 
-# ── Flush screen ─────────────────────────────────────────────────────────────
-qml('stackView.push(flushScreen, StackView.Immediate)')
-grab("09_flush.png", ['window.flushActive = true', 'window.currentState = "FLUSHING"'])
+if log_path:
+    rec = json.load(open(log_path))
+    samples = rec.get("samples", [])
+    coffee_pts = [{"time": s["t_s"], "weight": s["weight_g"]} for s in samples]
+    press_pts = [{"time": s["t_s"], "pressure": s["pressure_bar"]} for s in samples]
+    dur = rec.get("duration_s", samples[-1]["t_s"] if samples else 0)
+    final_w = rec.get("final_weight_g", 0) or 0
+    max_p = rec.get("max_pressure_bar", 0) or 0
+    last_p = samples[-1]["pressure_bar"] if samples else 0
+    mm, ss = int(dur) // 60, int(dur) % 60
+    print(f"brew log: {os.path.basename(log_path)} dur={dur:.0f}s n={len(samples)} "
+          f"finW={final_w} maxP={max_p}")
 
-# ── Settings screen ──────────────────────────────────────────────────────────
-qml('stackView.push(settingsScreen, StackView.Immediate)')
-grab("10_settings.png")
+    brew_item = qml('stackView.currentItem')
+    ctxB = QQmlEngine.contextForObject(brew_item)
+    coffee = qml('coffeeChart', ctxB, brew_item)
+    pressure = qml('pressureChart', ctxB, brew_item)
+    QQmlProperty.write(coffee, "dataPoints", coffee_pts)
+    QQmlProperty.write(pressure, "dataPoints", press_pts)
+    qml('coffeeChart.updateScale()', ctxB, brew_item)
+    qml('pressureChart.updateScale()', ctxB, brew_item)
+
+    # Stage window state (root scope), then repaint the charts (brew-item scope)
+    # so the big-numbers match, then grab — done explicitly because the chart
+    # ids live in the brew screen's context, not root.
+    for ex in [
+        'window.currentState = "BREWING"',
+        f'window.brewTime = "{mm:02d}:{ss:02d}"',
+        'window.brewDisplayFrozen = true',
+        f'window.frozenWeight = {final_w}',
+        f'window.frozenPressure = {last_p}',
+        f'window.currentWeight = {final_w}',
+        f'window.currentPressure = {last_p}',
+        'window.brewTempActual = 93.2',
+    ]:
+        qml(ex)
+    qml('coffeeChart.requestPaint()', ctxB, brew_item)
+    qml('pressureChart.requestPaint()', ctxB, brew_item)
+    disable_shape_layers()
+    pump(400)                       # let the Canvas render the curves
+    img = win.grabWindow()
+    img.save(os.path.join(OUTDIR, "06_brew_brewing.png"))
+    print("saved", os.path.join(OUTDIR, "06_brew_brewing.png"))
+else:
+    print("no brew logs found — skipping 06 real-data shot")
 
 print("DONE", OUTDIR)

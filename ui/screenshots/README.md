@@ -7,11 +7,12 @@ mockups. Drop them into a design tool for a superficial redesign pass.
 - **Resolution:** 1920×1080 (the UI is laid out at a logical 960×540; the grab
   is 2× device-pixel-ratio).
 - **Regenerate:** on the Pi, `cd ~/silvia-lever/ui/source && QT_QPA_PLATFORM=offscreen python3 _render_screens.py`
-  then `pscp` the `screenshots/` folder back. Edit the staged property values /
-  scenarios at the bottom of the harness to taste.
-- Gauges are `QtQuick.Shapes`; the harness disables their FBO `layer` so the
-  arcs paint under the software renderer (costs only MSAA antialiasing — the
-  live machine renders them smooth on the GPU).
+  then `pscp` the `screenshots/` folder back. Optional 2nd arg = a brew-log
+  filename to feed screen 06.
+- The harness stops the mock serial feed after connect so staged state sticks,
+  and disables the gauges' FBO `layer` so the `QtQuick.Shapes` arcs paint under
+  the software renderer (costs only MSAA antialiasing — the live machine
+  renders them smooth on the GPU).
 
 | File | Screen / state |
 |------|----------------|
@@ -20,11 +21,10 @@ mockups. Drop them into a design tool for a superficial redesign pass.
 | `03_home_setpoint_steam.png` | Home + steam-boiler setpoint popup |
 | `04_home_unprimed.png` | Home with boiler not primed (PRIME button glowing) |
 | `05_brew_ready.png` | Brew screen, HEATING_BREW — "tap to start" |
-| `06_brew_brewing.png` | Brew screen, BREWING — amber clock "tap clock to stop", live charts |
-| `07_steam_heating.png` | Steam screen, HEATING_STEAM |
-| `08_steam_ready.png` | Steam screen, STEAMING |
-| `09_flush.png` | Flush screen, flushing |
-| `10_settings.png` | Settings (temp setpoints, scale TARE/CAL, PID AUTOTUNE) — currently still °C, and unreachable until a re-entry gesture is wired |
+| `06_brew_brewing.png` | Brew screen, BREWING — **real historical brew** on the charts (`brew_2026-06-09_19-16-20`: 46 s, 9-bar shot, 42 g), amber clock "tap clock to stop" |
 
-> Note: the home/brew screens display °F; the settings screen is still °C
-> (it's not reachable in normal use yet — see CHANGELOG TODO).
+Screen 06's charts are a real recorded shot replayed from `brew_logs/` — this is
+also the proof-of-concept for a future "replay / brew preview" feature (render a
+saved brew's weight+pressure curves on the brew chart).
+
+> All shown screens display °F.
