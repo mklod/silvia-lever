@@ -1,4 +1,4 @@
-// Last modified: 2026-06-10--2240
+// Last modified: 2026-06-16--1348
 import QtQuick 2.15
 import QtQuick.Window 2.15
 import QtQuick.Controls
@@ -48,7 +48,7 @@ ApplicationWindow {
     property bool scalesSettled: false
     property bool scalesTared: false
     property real brewTargetTemp: 93.0
-    property real steamTargetTemp: 130.0
+    property real steamTargetTemp: 121.11   // 250 °F (overwritten by firmware/settings)
     property bool heatersEnabled: false
     property bool autoBrewMode: false   // mirrors firmware autoBrewMode
     property string profileName: "—"    // active brew profile name

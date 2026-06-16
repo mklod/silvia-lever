@@ -6,7 +6,7 @@ class SettingsManager:
         self.settings_file = settings_file
         self.default_settings = {
             "brew_temp": 93.0,
-            "steam_temp": 130.0,
+            "steam_temp": 121.11,   # 250 °F
             "scale_cal": 420.0,   # NAU7802 single calibration factor
             "profiles": []
         }

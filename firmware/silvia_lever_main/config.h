@@ -63,7 +63,7 @@
 
 // ─── Default Temperature Setpoints ───────────────────────────────────────────
 #define DEFAULT_BREW_TEMP   93.0   // Thermoblock target (°C)
-#define DEFAULT_STEAM_TEMP 130.0   // Steam boiler target (°C)
+#define DEFAULT_STEAM_TEMP 121.11  // Steam boiler target (°C) = 250 °F
 
 // ─── Brew Thermoblock PID ─────────────────────────────────────────────────────
 // Tune these after testing on the real machine.

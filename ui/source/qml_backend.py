@@ -1,4 +1,4 @@
-# Last modified: 2026-06-10--2240
+# Last modified: 2026-06-16--1348
 from PyQt6.QtCore import QObject, pyqtSignal, pyqtSlot, QTimer
 import config
 from safety_manager import SafetyManager
@@ -133,6 +133,8 @@ class CoffeeController(QObject):
 
             # Restore scale calibration
             QTimer.singleShot(400, self._restore_scale_calibration)
+            # Push persisted brew/steam setpoints so saved defaults take effect on boot
+            QTimer.singleShot(500, self._restore_temperatures)
             # Restore persisted PID gains (if any), after firmware's had time to boot
             QTimer.singleShot(600, self._restore_pid_gains)
             # Ask firmware for its brew-profile list (populates the UI picker)
@@ -750,6 +752,18 @@ class CoffeeController(QObject):
             kp, ki, kd = self._pid_gains
             self.serial.send_command(f"SET_PID {kp} {ki} {kd}")
             self.logger.log_command(f"Restored PID gains: kp={kp} ki={ki} kd={kd}")
+
+    def _restore_temperatures(self):
+        """Push persisted brew/steam setpoints to the firmware on connect, so the
+        saved defaults actually take effect on startup (the firmware otherwise
+        keeps its own config.h defaults until the user opens the setpoint popup).
+        Mirrors the scale-cal / PID restore above."""
+        if self.connected:
+            self.serial.send_command(f"SET_TEMP BREW {self._brew_target_temp}")
+            self.serial.send_command(f"SET_TEMP STEAM {self._steam_target_temp}")
+            self.logger.log_command(
+                f"Restored setpoints: BREW {self._brew_target_temp} "
+                f"STEAM {self._steam_target_temp}")
 
 
     @pyqtSlot()
