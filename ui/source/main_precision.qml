@@ -519,8 +519,8 @@ ApplicationWindow {
                         Row {
                             width: parent.width
                             Text { width: 82; text: "PHASE"; color: Theme.dim; font.family: Theme.archivo; font.pixelSize: 11; font.weight: Theme.w700; font.letterSpacing: 1; font.capitalization: Font.AllUppercase }
-                            Text { width: 60; text: "TARGET"; color: Theme.dim; font.family: Theme.archivo; font.pixelSize: 11; font.weight: Theme.w700; font.letterSpacing: 1 }
-                            Text { width: 66; text: "RAMP"; color: Theme.dim; font.family: Theme.archivo; font.pixelSize: 11; font.weight: Theme.w700; font.letterSpacing: 1 }
+                            Text { width: 56; text: "TARGET"; color: Theme.dim; font.family: Theme.archivo; font.pixelSize: 11; font.weight: Theme.w700; font.letterSpacing: 1 }
+                            Text { width: 112; text: "RAMP"; color: Theme.dim; font.family: Theme.archivo; font.pixelSize: 11; font.weight: Theme.w700; font.letterSpacing: 1 }
                             Text { text: "EXITS WHEN"; color: Theme.dim; font.family: Theme.archivo; font.pixelSize: 11; font.weight: Theme.w700; font.letterSpacing: 1 }
                         }
                         Repeater {
@@ -532,9 +532,9 @@ ApplicationWindow {
                                     width: parent.width; topPadding: 6; bottomPadding: 6
                                     property var ph: profRoot.prof.phases[index]
                                     Text { width: 82; text: parent.ph.name; color: Theme.ink; font.family: Theme.archivo; font.pixelSize: 12; font.weight: Theme.w700 }
-                                    Text { width: 60; text: parent.ph.target; color: Theme.ink; font.family: Theme.mono; font.pixelSize: 12 }
-                                    Text { width: 66; text: parent.ph.ramp; color: Theme.ink; font.family: Theme.mono; font.pixelSize: 12 }
-                                    Text { width: parent.width - 200; elide: Text.ElideRight; text: parent.ph.exit; color: Theme.dim; font.family: Theme.archivo; font.pixelSize: 12 }
+                                    Text { width: 56; text: parent.ph.target; color: Theme.ink; font.family: Theme.mono; font.pixelSize: 12 }
+                                    Text { width: 112; elide: Text.ElideRight; text: parent.ph.ramp; color: Theme.ink; font.family: Theme.mono; font.pixelSize: 12 }
+                                    Text { width: parent.width - 250; elide: Text.ElideRight; text: parent.ph.exit; color: Theme.dim; font.family: Theme.archivo; font.pixelSize: 12 }
                                 }
                             }
                         }
