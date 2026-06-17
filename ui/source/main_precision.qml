@@ -193,6 +193,7 @@ ApplicationWindow {
                         setF: window.cToF(window.brewTargetTemp)
                         btn1Text: "BREW"; btn1Variant: "primary"
                         btn2Text: "FLUSH"; btn2Variant: "plain"
+                        btn2Active: window.flushActive          // text white→red while flushing
                         onMeterTapped: window.setpointPopup = "brew"
                         onBtn1: { controller.heatBrew(); stackView.push(brewScreen) }
                         onBtn2: { if (window.flushActive) { window.flushActive=false; controller.stopFlush() }
@@ -210,11 +211,16 @@ ApplicationWindow {
                         valueF: window.cToF(window.steamTempActual)
                         setF: window.cToF(window.steamTargetTemp)
                         btn1Text: "STEAM"; btn1Variant: "primary"
-                        btn2Text: window.boilerPrimed ? "PRIMED ✓" : "PRIME"
-                        btn2Variant: window.boilerPrimed ? "primed" : "plain"
+                        btn1Active: window.steamActive          // text white→red while steaming
+                        // PRIME is a 3-state: idle → fill → confirm-overflow. While
+                        // filling, tapping confirms (primeDone) and STOPS the pump.
+                        btn2Text: window.currentState === "PRIMING_STEAM" ? "OVERFLOW? TAP"
+                                  : (window.boilerPrimed ? "PRIMED ✓" : "PRIME")
+                        btn2Variant: (window.currentState === "PRIMING_STEAM" || window.boilerPrimed) ? "primed" : "plain"
                         onMeterTapped: window.setpointPopup = "steam"
                         onBtn1: { if (window.steamActive) controller.stopSteam(); else controller.beginSteam() }
-                        onBtn2: controller.primeBoiler()
+                        onBtn2: { if (window.currentState === "PRIMING_STEAM") controller.primeDone()
+                                  else controller.primeBoiler() }
                     }
                 }
             }

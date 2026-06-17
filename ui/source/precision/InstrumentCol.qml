@@ -14,8 +14,10 @@ Item {
     property real setF: 0
     property string btn1Text: ""
     property string btn1Variant: "primary"
+    property bool btn1Active: false
     property string btn2Text: ""
     property string btn2Variant: "plain"
+    property bool btn2Active: false
 
     signal meterTapped()
     signal btn1()
@@ -95,7 +97,7 @@ Item {
         anchors.right: mirrored ? meter.left : undefined
         anchors.rightMargin: mirrored ? 22 : 0
         spacing: 14
-        PButton { text: root.btn1Text; variant: root.btn1Variant; onClicked: root.btn1() }
-        PButton { text: root.btn2Text; variant: root.btn2Variant; onClicked: root.btn2() }
+        PButton { text: root.btn1Text; variant: root.btn1Variant; active: root.btn1Active; onClicked: root.btn1() }
+        PButton { text: root.btn2Text; variant: root.btn2Variant; active: root.btn2Active; onClicked: root.btn2() }
     }
 }

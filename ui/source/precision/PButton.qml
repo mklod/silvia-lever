@@ -10,6 +10,7 @@ Item {
     property string text: ""
     property string variant: "primary"
     property bool enabledLook: true
+    property bool active: false        // ON state — label turns red (FLUSH/STEAM)
     signal clicked()
 
     implicitWidth: 150
@@ -48,7 +49,7 @@ Item {
         Text {
             anchors.centerIn: parent
             text: root.text
-            color: root.primed ? Theme.red : Theme.ink
+            color: (root.primed || root.active) ? Theme.red : Theme.ink
             font.family: Theme.archivo
             font.pixelSize: 22
             font.weight: Theme.w600

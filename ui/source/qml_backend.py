@@ -136,10 +136,6 @@ class CoffeeController(QObject):
             QTimer.singleShot(400, self._restore_scale_calibration)
             # Push persisted brew/steam setpoints so saved defaults take effect on boot
             QTimer.singleShot(500, self._restore_temperatures)
-            # Heaters OFF on every startup — a Pi reboot doesn't reset the Teensy,
-            # so without this the machine keeps heating across UI restarts. User
-            # taps HEAT to enable when actually brewing/steaming.
-            QTimer.singleShot(550, self._apply_heaters_off)
             # Restore persisted PID gains (if any), after firmware's had time to boot
             QTimer.singleShot(600, self._restore_pid_gains)
             # Ask firmware for its brew-profile list (populates the UI picker)
@@ -824,14 +820,6 @@ class CoffeeController(QObject):
                 "maxT": max(40.0, dur * 1.05), "maxMass": max(50.0, finw * 1.1),
             })
         self.shotsChanged.emit(shots)
-
-    def _apply_heaters_off(self):
-        """Force heaters OFF on startup. The Teensy keeps its state across Pi
-        reboots, so the UI must explicitly disable heating each time it connects
-        — otherwise the machine heats on every restart. User re-enables via HEAT."""
-        if self.connected:
-            self.serial.send_command("SET_HEATERS_ENABLE 0")
-            self.logger.log_command("Startup: heaters OFF by default")
 
 
     @pyqtSlot()
