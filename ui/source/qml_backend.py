@@ -136,10 +136,6 @@ class CoffeeController(QObject):
             QTimer.singleShot(400, self._restore_scale_calibration)
             # Push persisted brew/steam setpoints so saved defaults take effect on boot
             QTimer.singleShot(500, self._restore_temperatures)
-            # DEV: heaters OFF on startup so unattended reboots during development
-            # don't leave the machine cycling. Tap HEAT to enable. (Toggle this
-            # off for normal use.)
-            QTimer.singleShot(550, self._apply_heaters_off)
             # Restore persisted PID gains (if any), after firmware's had time to boot
             QTimer.singleShot(600, self._restore_pid_gains)
             # Ask firmware for its brew-profile list (populates the UI picker)
