@@ -136,6 +136,10 @@ class CoffeeController(QObject):
             QTimer.singleShot(400, self._restore_scale_calibration)
             # Push persisted brew/steam setpoints so saved defaults take effect on boot
             QTimer.singleShot(500, self._restore_temperatures)
+            # DEV: heaters OFF on startup so unattended reboots during development
+            # don't leave the machine cycling. Tap HEAT to enable. (Toggle this
+            # off for normal use.)
+            QTimer.singleShot(550, self._apply_heaters_off)
             # Restore persisted PID gains (if any), after firmware's had time to boot
             QTimer.singleShot(600, self._restore_pid_gains)
             # Ask firmware for its brew-profile list (populates the UI picker)
@@ -766,6 +770,12 @@ class CoffeeController(QObject):
                 f"Restored setpoints: BREW {self._brew_target_temp} "
                 f"STEAM {self._steam_target_temp}")
 
+    def _apply_heaters_off(self):
+        """DEV: force heaters OFF on startup (unattended-reboot safety)."""
+        if self.connected:
+            self.serial.send_command("SET_HEATERS_ENABLE 0")
+            self.logger.log_command("Startup: heaters OFF (dev default)")
+
     @pyqtSlot()
     def requestShots(self):
         """Scan brew_logs/ and emit the saved shots (newest first) for the
@@ -819,8 +829,48 @@ class CoffeeController(QObject):
                 "peak": "%.1f" % maxp, "spark": spark, "mass": mass, "press": press,
                 "maxT": max(40.0, dur * 1.05), "maxMass": max(50.0, finw * 1.1),
             })
+        self._shots = shots
         self.shotsChanged.emit(shots)
 
+    @pyqtSlot(int)
+    def loadReplay(self, index):
+        """Upload a saved shot's recorded pressure curve to the firmware and put
+        the machine into heating, ready to repeat it. The UI then calls
+        beginReplay() (tap-to-start) to actually run the curve."""
+        if not self.connected:
+            return
+        shots = getattr(self, "_shots", [])
+        if not (0 <= index < len(shots)):
+            return
+        press = shots[index].get("press") or []
+        if len(press) < 2:
+            self.errorOccurred.emit("This shot has no pressure curve to replay")
+            return
+        # Downsample to ≤60 vertices (firmware holds 64); always keep the last.
+        step = max(1, len(press) // 60)
+        pts = press[::step]
+        if pts[-1] is not press[-1]:
+            pts.append(press[-1])
+        self.serial.send_command("STOP")
+        self.serial.send_command("REPLAY_LOAD %d" % len(pts))
+        for p in pts:
+            self.serial.send_command("REPLAY_PT %.2f %.2f" % (float(p["t"]), float(p["v"])))
+        self.serial.send_command("START_BREW")
+        self.temp_controller.set_mode("BREW")
+        self.safety.start_brew_timer()
+        self.logger.log_command("Replay loaded (%d pts) shot=%d; heating" % (len(pts), index))
+
+    @pyqtSlot()
+    def beginReplay(self):
+        """Start the brew that follows the loaded replay curve."""
+        if not self.connected:
+            return
+        self.serial.send_command("BEGIN_REPLAY")
+        import time
+        self._brew_start_time = time.time()
+        self._brewing = True
+        self._timer.start(500)
+        self.logger.log_command("BEGIN_REPLAY")
 
     @pyqtSlot()
     def emergencyStop(self):

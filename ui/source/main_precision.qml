@@ -59,6 +59,10 @@ ApplicationWindow {
     property int selectedProfile: 0
     property var shotHistory: []
     property int selectedShot: 0
+    // Replay: armed when a saved shot's curve is loaded into the firmware and
+    // the brew screen should start it (beginReplay) instead of a normal brew.
+    property bool replayArmed: false
+    property string replayLabel: ""
 
     Timer {
         interval: 250; repeat: true
@@ -208,7 +212,7 @@ ApplicationWindow {
                         btn2Text: "FLUSH"; btn2Variant: "plain"
                         btn2Active: window.flushActive          // text white→red while flushing
                         onMeterTapped: window.setpointPopup = "brew"
-                        onBtn1: { controller.heatBrew(); stackView.push(brewScreen) }
+                        onBtn1: { window.replayArmed = false; controller.heatBrew(); stackView.push(brewScreen) }
                         onBtn2: { if (window.flushActive) { window.flushActive=false; controller.stopFlush() }
                                   else { window.flushActive=true; controller.startFlush() } }
                     }
@@ -332,7 +336,7 @@ ApplicationWindow {
                 anchors.topMargin: 26; anchors.leftMargin: 40; anchors.rightMargin: 40
                 height: 80
                 BackChip { id: bback; anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter
-                           onClicked: { controller.stopBrew(); stackView.pop() } }
+                           onClicked: { controller.stopBrew(); window.replayArmed = false; stackView.pop() } }
                 Row {
                     id: statsRow
                     anchors.left: bback.right; anchors.leftMargin: 30; anchors.right: parent.right
@@ -392,18 +396,24 @@ ApplicationWindow {
                 anchors.topMargin: 110            // leave the back chip + stats tappable
                 visible: window.currentState === "HEATING_BREW"
                 z: 30
-                MouseArea { anchors.fill: parent; onClicked: controller.beginBrew() }
+                MouseArea { anchors.fill: parent
+                            onClicked: window.replayArmed ? controller.beginReplay() : controller.beginBrew() }
                 Rectangle {
                     anchors.centerIn: parent
                     width: startCol.width + 80; height: startCol.height + 48
-                    radius: 8; color: Qt.rgba(1,1,1,0.03)
-                    border.width: 1; border.color: Theme.hair
+                    radius: 8; color: window.replayArmed ? Qt.rgba(1,0.27,0.227,0.05) : Qt.rgba(1,1,1,0.03)
+                    border.width: 1; border.color: window.replayArmed ? Theme.red : Theme.hair
                     Column {
                         id: startCol
                         anchors.centerIn: parent; spacing: 10
                         Text { anchors.horizontalCenter: parent.horizontalCenter
-                               text: "TAP TO START"; color: Theme.ink
+                               text: window.replayArmed ? "TAP TO REPLAY" : "TAP TO START"
+                               color: window.replayArmed ? Theme.red : Theme.ink
                                font.family: Theme.archivo; font.pixelSize: 30; font.weight: Theme.w700; font.letterSpacing: 2 }
+                        Text { anchors.horizontalCenter: parent.horizontalCenter
+                               visible: window.replayArmed
+                               text: "Repeating " + window.replayLabel + " — pressure curve"
+                               color: Theme.dim; font.family: Theme.archivo; font.pixelSize: 14 }
                         Text { anchors.horizontalCenter: parent.horizontalCenter
                                text: window.heatersEnabled
                                      ? (window.cToF(window.brewTempActual).toFixed(0) + "°F → " + window.cToF(window.brewTargetTemp).toFixed(0) + "°F")
@@ -517,10 +527,10 @@ ApplicationWindow {
                     Column {
                         width: parent.width; spacing: 0
                         Row {
-                            width: parent.width
-                            Text { width: 82; text: "PHASE"; color: Theme.dim; font.family: Theme.archivo; font.pixelSize: 11; font.weight: Theme.w700; font.letterSpacing: 1; font.capitalization: Font.AllUppercase }
-                            Text { width: 56; text: "TARGET"; color: Theme.dim; font.family: Theme.archivo; font.pixelSize: 11; font.weight: Theme.w700; font.letterSpacing: 1 }
-                            Text { width: 112; text: "RAMP"; color: Theme.dim; font.family: Theme.archivo; font.pixelSize: 11; font.weight: Theme.w700; font.letterSpacing: 1 }
+                            width: parent.width; spacing: 18
+                            Text { width: 78; text: "PHASE"; color: Theme.dim; font.family: Theme.archivo; font.pixelSize: 11; font.weight: Theme.w700; font.letterSpacing: 1; font.capitalization: Font.AllUppercase }
+                            Text { width: 52; text: "TARGET"; color: Theme.dim; font.family: Theme.archivo; font.pixelSize: 11; font.weight: Theme.w700; font.letterSpacing: 1 }
+                            Text { width: 110; text: "RAMP"; color: Theme.dim; font.family: Theme.archivo; font.pixelSize: 11; font.weight: Theme.w700; font.letterSpacing: 1 }
                             Text { text: "EXITS WHEN"; color: Theme.dim; font.family: Theme.archivo; font.pixelSize: 11; font.weight: Theme.w700; font.letterSpacing: 1 }
                         }
                         Repeater {
@@ -529,12 +539,12 @@ ApplicationWindow {
                                 width: parent.width
                                 Rectangle { width: parent.width; height: 1; color: Theme.hair }
                                 Row {
-                                    width: parent.width; topPadding: 6; bottomPadding: 6
+                                    width: parent.width; spacing: 18; topPadding: 7; bottomPadding: 7
                                     property var ph: profRoot.prof.phases[index]
-                                    Text { width: 82; text: parent.ph.name; color: Theme.ink; font.family: Theme.archivo; font.pixelSize: 12; font.weight: Theme.w700 }
-                                    Text { width: 56; text: parent.ph.target; color: Theme.ink; font.family: Theme.mono; font.pixelSize: 12 }
-                                    Text { width: 112; elide: Text.ElideRight; text: parent.ph.ramp; color: Theme.ink; font.family: Theme.mono; font.pixelSize: 12 }
-                                    Text { width: parent.width - 250; elide: Text.ElideRight; text: parent.ph.exit; color: Theme.dim; font.family: Theme.archivo; font.pixelSize: 12 }
+                                    Text { width: 78; text: parent.ph.name; color: Theme.ink; font.family: Theme.archivo; font.pixelSize: 12; font.weight: Theme.w700 }
+                                    Text { width: 52; text: parent.ph.target; color: Theme.ink; font.family: Theme.mono; font.pixelSize: 12 }
+                                    Text { width: 110; elide: Text.ElideRight; text: parent.ph.ramp; color: Theme.ink; font.family: Theme.mono; font.pixelSize: 12 }
+                                    Text { width: parent.width - 330; elide: Text.ElideRight; text: parent.ph.exit; color: Theme.dim; font.family: Theme.archivo; font.pixelSize: 12 }
                                 }
                             }
                         }
@@ -642,10 +652,15 @@ ApplicationWindow {
                         MouseArea {
                             anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
                             implicitWidth: replayRow.width; implicitHeight: 24
-                            onClicked: replayAnim.restart()
+                            onClicked: {
+                                controller.loadReplay(histRoot.sel)
+                                window.replayArmed = true
+                                window.replayLabel = histRoot.shot ? (histRoot.shot.date + " · " + histRoot.shot.time) : ""
+                                stackView.push(brewScreen)
+                            }
                             Row { id: replayRow; spacing: 6; anchors.verticalCenter: parent.verticalCenter
-                                Text { text: replayAnim.running ? "■" : "▶"; color: Theme.red; font.pixelSize: 11; anchors.verticalCenter: parent.verticalCenter }
-                                Text { text: replayAnim.running ? "REPLAYING" : "REPLAY"; color: Theme.red; font.family: Theme.archivo; font.pixelSize: 12; font.weight: Theme.w700; font.letterSpacing: 1 }
+                                Text { text: "▶"; color: Theme.red; font.pixelSize: 11; anchors.verticalCenter: parent.verticalCenter }
+                                Text { text: "REPLAY"; color: Theme.red; font.family: Theme.archivo; font.pixelSize: 12; font.weight: Theme.w700; font.letterSpacing: 1 }
                             }
                         }
                     }

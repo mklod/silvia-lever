@@ -292,6 +292,32 @@ const unsigned long COMM_TIMEOUT_MS = 10000;
 // Pressure zero voltage (auto-calibrated in setup)
 float calibratedVZero = V_ZERO;
 
+// ── Shot replay ──────────────────────────────────────────────────────────────
+// A recorded shot's pressure-vs-time curve, uploaded by the UI. When a brew is
+// started via BEGIN_REPLAY, the pump follows this curve as its setpoint instead
+// of a built-in profile — so a saved "god shot" can be repeated. Points are
+// [t seconds, bar], strictly increasing in t.
+const int   REPLAY_MAX = 64;
+float       gReplayT[REPLAY_MAX];
+float       gReplayBar[REPLAY_MAX];
+int         gReplayN    = 0;       // loaded point count
+bool        gReplayMode = false;   // true while a replay brew is running
+
+// Linear-interpolate the replay setpoint at elapsed time t (clamped 0..11 bar).
+float interpReplay(float t) {
+  if (gReplayN <= 0) return 0.0f;
+  if (t <= gReplayT[0]) return gReplayBar[0];
+  for (int i = 1; i < gReplayN; i++) {
+    if (t <= gReplayT[i]) {
+      float t0 = gReplayT[i - 1], t1 = gReplayT[i];
+      float b0 = gReplayBar[i - 1], b1 = gReplayBar[i];
+      float f = (t1 > t0) ? (t - t0) / (t1 - t0) : 0.0f;
+      return constrain(b0 + (b1 - b0) * f, 0.0f, 11.0f);
+    }
+  }
+  return gReplayBar[gReplayN - 1];
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 void setup() {
   // ── Hard-reset SPI peripheral before anything else ─────────────────
@@ -499,6 +525,48 @@ void processSerialCommands() {
       Serial.println("OK:BREWING_STARTED");
     } else {
       Serial.println("ERROR:INVALID_STATE_FOR_BREW_NOW");
+    }
+  }
+  else if (cmd.startsWith("REPLAY_LOAD")) {
+    // Begin loading a replay curve. Clears any prior curve. Points follow as
+    // REPLAY_PT commands. (Argument, if any, is an expected-count hint.)
+    gReplayN = 0;
+    gReplayMode = false;
+    Serial.println("OK:REPLAY_CLEARED");
+  }
+  else if (cmd.startsWith("REPLAY_PT ")) {
+    // REPLAY_PT <t_seconds> <bar> — append one curve vertex (silent ack to
+    // avoid flooding the link while ~50 points stream in).
+    String rest = cmd.substring(10); rest.trim();
+    int sp = rest.indexOf(' ');
+    if (sp > 0 && gReplayN < REPLAY_MAX) {
+      float t = rest.substring(0, sp).toFloat();
+      float b = rest.substring(sp + 1).toFloat();
+      gReplayT[gReplayN]   = t;
+      gReplayBar[gReplayN] = b;
+      gReplayN++;
+    }
+  }
+  else if (cmd == "BEGIN_REPLAY") {
+    // Start a brew that follows the loaded replay curve (god-shot repeat).
+    if (sys.state == STATE_HEATING_BREW && gReplayN >= 2) {
+      sys.state = STATE_BREWING;
+      tareScales();
+      sys.brewTimer      = millis();
+      sys.pidIntegral    = 0.0;  sys.pidLastError = 0.0;  sys.pidLastTime = millis();
+      sys.pumpIntegral   = 0.0f; sys.pumpPiLastMs = millis();
+      sys.pumpDLastMeas  = 0.0f; sys.pumpDFiltered = 0.0f;
+      sys.brewSetpoint   = 0.0f; sys.brewSlewLastMs = millis();
+      sys.segmentIndex   = 0;    sys.segmentStartMs = millis();
+      sys.potAtBrewStart = sys.pumpPower;
+      sys.handoverOffset = 0;
+      setValve(VALVE_PUMP_PIN, false);
+      setValve(VALVE_THERMOBLOCK_PIN, true);
+      gReplayMode        = true;
+      sys.brewPhase      = BREW_PHASE_HOLD;
+      Serial.println("OK:REPLAY_STARTED");
+    } else {
+      Serial.println("ERROR:REPLAY_NOT_READY");
     }
   }
   else if (cmd == "BEGIN_STEAM") {
@@ -815,6 +883,8 @@ void updateSystemLogic() {
                             0, PUMP_PWM_FULL);
         analogWrite(PUMP_PWM_PIN, pwm);
         sys.lastPumpPwm = pwm;
+      } else if (gReplayMode) {
+        runReplayEngine();
       } else {
         runBrewSegmentEngine();
       }
@@ -1107,6 +1177,50 @@ int pumpClosedLoop(float targetBar, int basePwm, float kp, float ki, float kd,
 // PI(D) controller with that segment's gain set, and advances when an exit
 // criterion fires. The final segment runs until the user STOPs. A manual
 // pot-rotation takeover hands control to the pot at any point. PROFILES.md §3.
+// Replay engine — drive the pump to follow the uploaded recorded pressure
+// curve (gReplayT/gReplayBar) as a time-indexed setpoint. Pot rotation still
+// takes over (same as the profile engine); the shot auto-stops at curve end.
+void runReplayEngine() {
+  unsigned long now = millis();
+
+  // Manual takeover — pot rotated past threshold since brew start.
+  if (abs(sys.pumpPower - sys.potAtBrewStart) > MANUAL_TAKEOVER_DELTA) {
+    sys.handoverOffset = sys.lastPumpPwm - sys.pumpPower;
+    sys.brewPhase = BREW_PHASE_EXTRACT;
+    Serial.println("INFO:BREW_MANUAL_TAKEOVER");
+    int pwm = constrain(sys.pumpPower + sys.handoverOffset, 0, PUMP_PWM_FULL);
+    analogWrite(PUMP_PWM_PIN, pwm);
+    sys.lastPumpPwm = pwm;
+    return;
+  }
+
+  float elapsed = (now - sys.brewTimer) * 0.001f;
+
+  // End of the recorded curve → the shot is complete. Stop cleanly.
+  if (gReplayN < 2 || elapsed >= gReplayT[gReplayN - 1]) {
+    analogWrite(PUMP_PWM_PIN, 0);
+    digitalWrite(PUMP_ENA_PIN, LOW);
+    stopCurrentOperation();
+    Serial.println("INFO:REPLAY_DONE");
+    return;
+  }
+
+  // Follow the recorded pressure as the setpoint. Use the gentle preinfuse gain
+  // set at low pressure (the wetting phase), the stiffer brew set above it.
+  sys.brewSetpoint = interpReplay(elapsed);
+  sys.brewPhase = BREW_PHASE_HOLD;   // telemetry only
+  int pwm;
+  if (sys.brewSetpoint < 3.0f)
+    pwm = pumpClosedLoop(sys.brewSetpoint, PREINFUSE_BASE_PWM,
+                         PREINFUSE_KP, PREINFUSE_KI, PREINFUSE_KD,
+                         PREINFUSE_MIN_PWM, PREINFUSE_MAX_PWM);
+  else
+    pwm = pumpClosedLoop(sys.brewSetpoint, BREW_BASE_PWM,
+                         BREW_KP, BREW_KI, BREW_KD,
+                         BREW_MIN_PWM, BREW_MAX_PWM);
+  analogWrite(PUMP_PWM_PIN, pwm);
+}
+
 void runBrewSegmentEngine() {
   const BrewProfile& prof = BREW_PROFILES[sys.activeProfile];
   uint8_t idx = sys.segmentIndex;
@@ -1314,6 +1428,7 @@ void stopCurrentOperation() {
   sys.brewTimer   = 0;
   sys.pidIntegral  = 0.0;
   sys.pidLastError = 0.0;
+  gReplayMode = false;            // exit replay mode (curve stays loaded)
 }
 
 void safeOff() {
