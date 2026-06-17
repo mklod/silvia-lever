@@ -333,6 +333,12 @@ ApplicationWindow {
                                 label: modelData.l; value: modelData.v; unit: modelData.u
                                 valueColor: modelData.c; numeralSize: 54; align: Text.AlignHCenter
                             }
+                            // Tap the TIME clock to STOP while brewing.
+                            MouseArea {
+                                anchors.fill: parent
+                                enabled: modelData.l === "TIME" && window.currentState === "BREWING"
+                                onClicked: controller.stopBrew()
+                            }
                         }
                     }
                 }
@@ -357,6 +363,35 @@ ApplicationWindow {
                 valueText: (window.brewDisplayFrozen ? window.frozenPressure : window.currentPressure).toFixed(1)
                 unit: "bar"; traceColor: Theme.red
                 series: window.pressSeries; maxT: window.brewMaxT; maxV: window.brewMaxPress
+            }
+
+            // ── Start affordance: tap anywhere to begin while heating. Hidden
+            //    once BREWING (then the charts show; tap the TIME clock to stop).
+            Item {
+                anchors.fill: parent
+                anchors.topMargin: 110            // leave the back chip + stats tappable
+                visible: window.currentState === "HEATING_BREW"
+                z: 30
+                MouseArea { anchors.fill: parent; onClicked: controller.beginBrew() }
+                Rectangle {
+                    anchors.centerIn: parent
+                    width: startCol.width + 80; height: startCol.height + 48
+                    radius: 8; color: Qt.rgba(1,1,1,0.03)
+                    border.width: 1; border.color: Theme.hair
+                    Column {
+                        id: startCol
+                        anchors.centerIn: parent; spacing: 10
+                        Text { anchors.horizontalCenter: parent.horizontalCenter
+                               text: "TAP TO START"; color: Theme.ink
+                               font.family: Theme.archivo; font.pixelSize: 30; font.weight: Theme.w700; font.letterSpacing: 2 }
+                        Text { anchors.horizontalCenter: parent.horizontalCenter
+                               text: window.heatersEnabled
+                                     ? (window.cToF(window.brewTempActual).toFixed(0) + "°F → " + window.cToF(window.brewTargetTemp).toFixed(0) + "°F")
+                                     : "Heaters OFF — tap HEAT below to warm up"
+                               color: window.heatersEnabled ? Theme.dim : Theme.red
+                               font.family: Theme.archivo; font.pixelSize: 14 }
+                    }
+                }
             }
         }
     }
