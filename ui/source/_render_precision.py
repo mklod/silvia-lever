@@ -121,7 +121,12 @@ def downpts(press, n=40):
 hist = []
 labels = [("Today","19:16"),("Today","08:02"),("Yesterday","18:44"),("Yesterday","07:51"),("Jun 14","20:10")]
 for i, lg in enumerate(reversed(alllogs[-5:])):
-    rec, mass, press, dur = load_log(lg)
+    try:
+        rec, mass, press, dur = load_log(lg)
+        if not mass:
+            continue
+    except Exception:
+        continue
     finw = rec.get("final_weight_g", 0) or 0
     maxp = rec.get("max_pressure_bar", 0) or 0
     mm, ss = int(dur)//60, int(dur)%60

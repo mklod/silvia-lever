@@ -18,7 +18,9 @@ Rectangle {
     signal profTapped()
 
     height: 46
-    color: Theme.statusFill
+    // Opaque (not the translucent statusFill) so scrolling content behind it
+    // can't bleed through. ~1.5% white lift on true black, but solid.
+    color: Qt.rgba(0.015, 0.015, 0.015, 1.0)
 
     Rectangle { anchors.top: parent.top; width: parent.width; height: 1; color: Theme.hair }
 

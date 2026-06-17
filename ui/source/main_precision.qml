@@ -578,32 +578,37 @@ ApplicationWindow {
                            text: (histRoot.shots ? histRoot.shots.length : 0) + " SAVED" }
             }
 
-            // List
-            Column {
+            // List (scrollable / flickable)
+            ListView {
+                id: shotList
                 anchors.top: parent.top; anchors.topMargin: 110
                 anchors.left: parent.left; anchors.leftMargin: 40
-                width: 392; spacing: 10
-                Repeater {
-                    model: histRoot.shots ? histRoot.shots.length : 0
-                    delegate: Rectangle {
-                        width: 392; height: 64; radius: 5
-                        property bool seld: histRoot.sel === index
-                        property var sh: histRoot.shots[index]
-                        color: seld ? Qt.rgba(1,0.27,0.227,0.06) : "transparent"
-                        border.width: 1; border.color: seld ? Theme.red : Theme.hair
-                        Column {
-                            anchors.left: parent.left; anchors.leftMargin: 14
-                            anchors.verticalCenter: parent.verticalCenter; spacing: 4
-                            Row { spacing: 6
-                                Text { text: histRoot.shots[index].date; color: Theme.ink; font.family: Theme.archivo; font.pixelSize: 17; font.weight: Theme.w600 }
-                                Text { text: "· " + histRoot.shots[index].time; color: Theme.dim; font.family: Theme.archivo; font.pixelSize: 14 }
-                            }
-                            Text { text: histRoot.shots[index].meta; color: Theme.dim; font.family: Theme.mono; font.pixelSize: 13 }
+                anchors.bottom: parent.bottom; anchors.bottomMargin: 14
+                width: 392
+                clip: true
+                spacing: 10
+                cacheBuffer: 1200
+                boundsBehavior: Flickable.StopAtBounds
+                flickDeceleration: 2500
+                model: histRoot.shots ? histRoot.shots.length : 0
+                delegate: Rectangle {
+                    width: 392; height: 64; radius: 5
+                    property bool seld: histRoot.sel === index
+                    color: seld ? Qt.rgba(1,0.27,0.227,0.06) : "transparent"
+                    border.width: 1; border.color: seld ? Theme.red : Theme.hair
+                    Column {
+                        anchors.left: parent.left; anchors.leftMargin: 14
+                        anchors.right: rowSpark.left; anchors.rightMargin: 10
+                        anchors.verticalCenter: parent.verticalCenter; spacing: 4
+                        Row { spacing: 6
+                            Text { text: histRoot.shots[index].date; color: Theme.ink; font.family: Theme.archivo; font.pixelSize: 17; font.weight: Theme.w600 }
+                            Text { text: "· " + histRoot.shots[index].time; color: Theme.dim; font.family: Theme.archivo; font.pixelSize: 14 }
                         }
-                        Sparkline { anchors.right: parent.right; anchors.rightMargin: 14; anchors.verticalCenter: parent.verticalCenter
-                                    width: 64; height: 26; pts: histRoot.shots[index].spark; color: seld ? Theme.red : Theme.dim }
-                        MouseArea { anchors.fill: parent; onClicked: { histRoot.sel = index; window.selectedShot = index } }
+                        Text { width: parent.width; elide: Text.ElideRight; text: histRoot.shots[index].meta; color: Theme.dim; font.family: Theme.mono; font.pixelSize: 13 }
                     }
+                    Sparkline { id: rowSpark; anchors.right: parent.right; anchors.rightMargin: 14; anchors.verticalCenter: parent.verticalCenter
+                                width: 64; height: 26; pts: histRoot.shots[index].spark; color: seld ? Theme.red : Theme.dim }
+                    MouseArea { anchors.fill: parent; onClicked: { histRoot.sel = index; window.selectedShot = index } }
                 }
             }
 
