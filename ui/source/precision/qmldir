@@ -1,0 +1,11 @@
+singleton Theme 1.0 Theme.qml
+Overline 1.0 Overline.qml
+PButton 1.0 PButton.qml
+StatusBar 1.0 StatusBar.qml
+ColumnMeter 1.0 ColumnMeter.qml
+ChartCard 1.0 ChartCard.qml
+StatItem 1.0 StatItem.qml
+InstrumentCol 1.0 InstrumentCol.qml
+Sparkline 1.0 Sparkline.qml
+PhaseChart 1.0 PhaseChart.qml
+BackChip 1.0 BackChip.qml
