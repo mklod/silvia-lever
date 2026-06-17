@@ -165,6 +165,19 @@ ApplicationWindow {
                     MouseArea { anchors.fill: parent; anchors.margins: -10
                                 onClicked: { controller.requestShots(); stackView.push(historyScreen) } }
                 }
+                // Center: tappable entry to Shot history.
+                MouseArea {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    anchors.verticalCenter: parent.verticalCenter
+                    implicitWidth: histRow.width + 20; implicitHeight: 32
+                    onClicked: { controller.requestShots(); stackView.push(historyScreen) }
+                    Row { id: histRow; spacing: 7; anchors.centerIn: parent
+                        Text { text: "↻"; color: Theme.dim; font.pixelSize: 14
+                               anchors.verticalCenter: parent.verticalCenter }
+                        Overline { text: "SHOT HISTORY"; tracking: 3
+                                   anchors.verticalCenter: parent.verticalCenter }
+                    }
+                }
                 Row {
                     anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
                     spacing: 8
@@ -214,9 +227,10 @@ ApplicationWindow {
                         btn1Active: window.steamActive          // text white→red while steaming
                         // PRIME is a 3-state: idle → fill → confirm-overflow. While
                         // filling, tapping confirms (primeDone) and STOPS the pump.
-                        btn2Text: window.currentState === "PRIMING_STEAM" ? "OVERFLOW? TAP"
-                                  : (window.boilerPrimed ? "PRIMED ✓" : "PRIME")
-                        btn2Variant: (window.currentState === "PRIMING_STEAM" || window.boilerPrimed) ? "primed" : "plain"
+                        // Primed = red outline (armed), label stays "PRIME".
+                        btn2Text: window.currentState === "PRIMING_STEAM" ? "OVERFLOW? TAP" : "PRIME"
+                        btn2Variant: window.currentState === "PRIMING_STEAM" ? "alert"
+                                     : (window.boilerPrimed ? "outline" : "plain")
                         onMeterTapped: window.setpointPopup = "steam"
                         onBtn1: { if (window.steamActive) controller.stopSteam(); else controller.beginSteam() }
                         onBtn2: { if (window.currentState === "PRIMING_STEAM") controller.primeDone()
