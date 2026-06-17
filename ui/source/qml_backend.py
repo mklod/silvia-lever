@@ -40,6 +40,7 @@ class CoffeeController(QObject):
     autoBrewModeChanged = pyqtSignal(bool)
     profilesChanged = pyqtSignal(list)         # full list of profile names
     activeProfileChanged = pyqtSignal(int, str)  # (index, name)
+    shotsChanged = pyqtSignal(list)            # saved shots for history/replay
     boilerPrimedChanged = pyqtSignal(bool)     # boiler tank filled / dry-fire gate
     boilerPreheatedChanged = pyqtSignal(bool)  # boiler first reached steam temp
     autotuneLineReceived = pyqtSignal(str)  # raw firmware line: AUTOTUNE:... or AUTOTUNE_RESULT:...
@@ -768,6 +769,61 @@ class CoffeeController(QObject):
             self.logger.log_command(
                 f"Restored setpoints: BREW {self._brew_target_temp} "
                 f"STEAM {self._steam_target_temp}")
+
+    @pyqtSlot()
+    def requestShots(self):
+        """Scan brew_logs/ and emit the saved shots (newest first) for the
+        history/replay screen. Each shot carries summary stats + the recorded
+        mass/pressure curves so the detail charts and replay can render."""
+        import glob, json, datetime
+        DOSE = 18.0
+        shots = []
+        try:
+            files = sorted(glob.glob(os.path.join(self.brew_recorder.output_dir, "*.json")),
+                           reverse=True)
+        except Exception:
+            files = []
+        today = datetime.date.today()
+        for f in files[:40]:
+            try:
+                rec = json.load(open(f))
+            except Exception:
+                continue
+            s = rec.get("samples", [])
+            if not s:
+                continue
+            finw = rec.get("final_weight_g", 0) or 0
+            maxp = rec.get("max_pressure_bar", 0) or 0
+            dur = rec.get("duration_s", s[-1]["t_s"])
+            mm, sec = int(dur) // 60, int(dur) % 60
+            ratio = "1:%.1f" % (finw / DOSE) if finw else "—"
+            # date / time from started_at (UTC ISO) → local
+            date_s, time_s = "Shot", ""
+            try:
+                local = datetime.datetime.fromisoformat(rec["started_at"]).astimezone()
+                d = local.date()
+                if d == today:
+                    date_s = "Today"
+                elif d == today - datetime.timedelta(days=1):
+                    date_s = "Yesterday"
+                else:
+                    date_s = local.strftime("%b %-d")
+                time_s = local.strftime("%H:%M")
+            except Exception:
+                pass
+            stepc = max(1, len(s) // 120)
+            stepk = max(1, len(s) // 40)
+            mass = [{"t": x["t_s"], "v": x["weight_g"]} for x in s[::stepc]]
+            press = [{"t": x["t_s"], "v": x["pressure_bar"]} for x in s[::stepc]]
+            spark = [[x["t_s"], x["pressure_bar"]] for x in s[::stepk]]
+            shots.append({
+                "date": date_s, "time": time_s, "profile": "—",
+                "meta": "%.1fg · %s · %d:%02d" % (finw, ratio, mm, sec),
+                "yield": "%.1f" % finw, "ratio": ratio, "timeStr": "%d:%02d" % (mm, sec),
+                "peak": "%.1f" % maxp, "spark": spark, "mass": mass, "press": press,
+                "maxT": max(40.0, dur * 1.05), "maxMass": max(50.0, finw * 1.1),
+            })
+        self.shotsChanged.emit(shots)
 
     def _apply_heaters_off(self):
         """Force heaters OFF on startup. The Teensy keeps its state across Pi

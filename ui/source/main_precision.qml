@@ -115,6 +115,7 @@ ApplicationWindow {
         onBoilerPrimedChanged:   function(p) { window.boilerPrimed = p }
         onBoilerPreheatedChanged: function(r) { window.boilerPreheated = r }
         onProfilesChanged: function(list) { window.profiles = list }
+        onShotsChanged: function(list) { window.shotHistory = list; window.selectedShot = 0 }
         onErrorOccurred: function(e) {}
     }
 
@@ -158,8 +159,11 @@ ApplicationWindow {
                 anchors.topMargin: 30; anchors.leftMargin: 40; anchors.rightMargin: 40
                 height: 24
                 Overline {
+                    id: brand
                     anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter
                     text: "SILVIA · LEVER"; tracking: 4
+                    MouseArea { anchors.fill: parent; anchors.margins: -10
+                                onClicked: { controller.requestShots(); stackView.push(historyScreen) } }
                 }
                 Row {
                     anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
@@ -460,7 +464,7 @@ ApplicationWindow {
                         Row {
                             width: parent.width
                             Text { width: 82; text: "PHASE"; color: Theme.dim; font.family: Theme.archivo; font.pixelSize: 11; font.weight: Theme.w700; font.letterSpacing: 1; font.capitalization: Font.AllUppercase }
-                            Text { width: 52; text: "TARGET"; color: Theme.dim; font.family: Theme.archivo; font.pixelSize: 11; font.weight: Theme.w700; font.letterSpacing: 1 }
+                            Text { width: 60; text: "TARGET"; color: Theme.dim; font.family: Theme.archivo; font.pixelSize: 11; font.weight: Theme.w700; font.letterSpacing: 1 }
                             Text { width: 66; text: "RAMP"; color: Theme.dim; font.family: Theme.archivo; font.pixelSize: 11; font.weight: Theme.w700; font.letterSpacing: 1 }
                             Text { text: "EXITS WHEN"; color: Theme.dim; font.family: Theme.archivo; font.pixelSize: 11; font.weight: Theme.w700; font.letterSpacing: 1 }
                         }
@@ -473,7 +477,7 @@ ApplicationWindow {
                                     width: parent.width; topPadding: 6; bottomPadding: 6
                                     property var ph: profRoot.prof.phases[index]
                                     Text { width: 82; text: parent.ph.name; color: Theme.ink; font.family: Theme.archivo; font.pixelSize: 12; font.weight: Theme.w700 }
-                                    Text { width: 52; text: parent.ph.target; color: Theme.ink; font.family: Theme.mono; font.pixelSize: 12 }
+                                    Text { width: 60; text: parent.ph.target; color: Theme.ink; font.family: Theme.mono; font.pixelSize: 12 }
                                     Text { width: 66; text: parent.ph.ramp; color: Theme.ink; font.family: Theme.mono; font.pixelSize: 12 }
                                     Text { width: parent.width - 200; elide: Text.ElideRight; text: parent.ph.exit; color: Theme.dim; font.family: Theme.archivo; font.pixelSize: 12 }
                                 }
@@ -550,12 +554,24 @@ ApplicationWindow {
 
             // Detail (mini brew)
             Rectangle {
+                id: detail
                 anchors.top: parent.top; anchors.topMargin: 110
                 anchors.left: parent.left; anchors.leftMargin: 452
                 anchors.right: parent.right; anchors.rightMargin: 40
                 anchors.bottom: parent.bottom; anchors.bottomMargin: 16
                 radius: 6; color: Theme.card; border.width: 1; border.color: Theme.hair
                 visible: histRoot.shot !== null
+
+                property real replayClip: 1e9    // full curve by default
+                // Reset to full when the selected shot changes.
+                Connections { target: window
+                    function onSelectedShotChanged() { replayAnim.stop(); detail.replayClip = 1e9 } }
+                NumberAnimation {
+                    id: replayAnim; target: detail; property: "replayClip"
+                    from: 0; to: histRoot.shot ? histRoot.shot.maxT : 40
+                    duration: histRoot.shot ? Math.round(histRoot.shot.maxT * 1000) : 40000
+                    easing.type: Easing.Linear
+                }
                 Column {
                     anchors.fill: parent; anchors.margins: 14; anchors.leftMargin: 18; anchors.rightMargin: 18
                     spacing: 12
@@ -566,9 +582,10 @@ ApplicationWindow {
                         MouseArea {
                             anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
                             implicitWidth: replayRow.width; implicitHeight: 24
+                            onClicked: replayAnim.restart()
                             Row { id: replayRow; spacing: 6; anchors.verticalCenter: parent.verticalCenter
-                                Text { text: "▶"; color: Theme.red; font.pixelSize: 11; anchors.verticalCenter: parent.verticalCenter }
-                                Text { text: "REPLAY"; color: Theme.red; font.family: Theme.archivo; font.pixelSize: 12; font.weight: Theme.w700; font.letterSpacing: 1 }
+                                Text { text: replayAnim.running ? "■" : "▶"; color: Theme.red; font.pixelSize: 11; anchors.verticalCenter: parent.verticalCenter }
+                                Text { text: replayAnim.running ? "REPLAYING" : "REPLAY"; color: Theme.red; font.family: Theme.archivo; font.pixelSize: 12; font.weight: Theme.w700; font.letterSpacing: 1 }
                             }
                         }
                     }
@@ -597,6 +614,7 @@ ApplicationWindow {
                         series: histRoot.shot ? histRoot.shot.mass : []
                         maxT: histRoot.shot ? histRoot.shot.maxT : 40
                         maxV: histRoot.shot ? histRoot.shot.maxMass : 50
+                        clipT: detail.replayClip
                     }
                     ChartCard {
                         width: parent.width; height: 112
@@ -605,6 +623,7 @@ ApplicationWindow {
                         series: histRoot.shot ? histRoot.shot.press : []
                         maxT: histRoot.shot ? histRoot.shot.maxT : 40
                         maxV: 10
+                        clipT: detail.replayClip
                     }
                 }
             }

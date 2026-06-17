@@ -49,7 +49,7 @@ def main():
     
     # Create QML engine
     engine = QQmlApplicationEngine()
-    qml_file = os.path.join(os.path.dirname(__file__), "main.qml")
+    qml_file = os.path.join(os.path.dirname(__file__), "main_precision.qml")
     engine.load(QUrl.fromLocalFile(qml_file))
     
     if not engine.rootObjects():

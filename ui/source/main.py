@@ -14,7 +14,7 @@ app = QGuiApplication(sys.argv)
 qmlRegisterType(CoffeeController, "CoffeeController", 1, 0, "CoffeeController")
 
 engine = QQmlApplicationEngine()
-qml_file = os.path.join(os.path.dirname(__file__), "main.qml")
+qml_file = os.path.join(os.path.dirname(__file__), "main_precision.qml")
 engine.load(QUrl.fromLocalFile(qml_file))
 
 if not engine.rootObjects():

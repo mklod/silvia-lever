@@ -12,6 +12,7 @@ Rectangle {
     property color traceColor: Theme.mass
     property real maxT: 40
     property real maxV: 50
+    property real clipT: 1e9          // only draw points with t <= clipT (replay)
 
     radius: 6
     color: Theme.card
@@ -21,6 +22,7 @@ Rectangle {
     onSeriesChanged: plot.requestPaint()
     onMaxTChanged: plot.requestPaint()
     onMaxVChanged: plot.requestPaint()
+    onClipTChanged: plot.requestPaint()
 
     // Header
     Item {
@@ -69,10 +71,12 @@ Rectangle {
             ctx.lineJoin = "round"
             ctx.lineCap = "round"
             ctx.beginPath()
+            var started = false
             for (var i = 0; i < s.length; i++) {
+                if (s[i].t > root.clipT) break
                 var x = (s[i].t / root.maxT) * width
                 var y = height - (s[i].v / root.maxV) * height
-                if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y)
+                if (!started) { ctx.moveTo(x, y); started = true } else ctx.lineTo(x, y)
             }
             ctx.stroke()
             ctx.restore()
