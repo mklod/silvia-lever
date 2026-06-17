@@ -167,7 +167,7 @@ struct SystemData {
   bool heaterSteamOn        = false;
   // Runtime master switch for both SSRs. Default OFF so power-on never
   // starts heating; UI explicitly enables it before a hot test.
-  bool heatersEnabled       = true;   // TEST MODE 2026-04-23: default ON; thermoblock seeks setpoint from boot
+  bool heatersEnabled       = false;  // default OFF — power-on never heats; UI/HEAT toggle enables it
   // Boiler prime flag + Stage-9 staging (HEATING.md §5). preheatComplete
   // latches once the boiler first reaches its target, releasing the
   // thermoblock from cold-start inhibition.
