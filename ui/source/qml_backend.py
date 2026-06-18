@@ -41,6 +41,7 @@ class CoffeeController(QObject):
     profilesChanged = pyqtSignal(list)         # full list of profile names
     activeProfileChanged = pyqtSignal(int, str)  # (index, name)
     shotsChanged = pyqtSignal(list)            # saved shots for history/replay
+    doseChanged = pyqtSignal(float)            # basket dose (g) — drives RATIO
     boilerPrimedChanged = pyqtSignal(bool)     # boiler tank filled / dry-fire gate
     boilerPreheatedChanged = pyqtSignal(bool)  # boiler first reached steam temp
     autotuneLineReceived = pyqtSignal(str)  # raw firmware line: AUTOTUNE:... or AUTOTUNE_RESULT:...
@@ -95,6 +96,7 @@ class CoffeeController(QObject):
         saved_settings = self.settings_manager.load_settings()
         self._brew_target_temp = saved_settings["brew_temp"]
         self._steam_target_temp = saved_settings["steam_temp"]
+        self._dose_g = saved_settings.get("dose", 20.0)
         self._scale_cal = saved_settings.get("scale_cal", 420.0)
         # Guard: cal must be positive and in a plausible range.
         # Negative → raw/weight polarity inverted (library bug or bad cal).
@@ -129,6 +131,7 @@ class CoffeeController(QObject):
             # Delay signal emission to ensure QML is ready
             QTimer.singleShot(100, lambda: self.connectionStatusChanged.emit(True))
             QTimer.singleShot(200, lambda: self.targetTemperaturesChanged.emit(self._brew_target_temp, self._steam_target_temp))
+            QTimer.singleShot(250, lambda: self.doseChanged.emit(self._dose_g))
             
             # Priming is triggered from QML when user enters brew screen
 
@@ -855,6 +858,16 @@ class CoffeeController(QObject):
         self.temp_controller.set_mode("BREW")
         self.safety.start_brew_timer()
         self.logger.log_command("Replay loaded (%d pts) shot=%d; heating" % (len(pts), index))
+
+    @pyqtSlot(float)
+    def setDose(self, grams):
+        """Set the basket dose (g) used to compute the brew RATIO. Persisted."""
+        grams = max(5.0, min(40.0, grams))
+        self._dose_g = grams
+        self.settings_manager.save_settings(self._brew_target_temp,
+                                            self._steam_target_temp, dose=grams)
+        self.doseChanged.emit(grams)
+        self.logger.log_command("Set dose: %.1f g" % grams)
 
     @pyqtSlot()
     def beginReplay(self):

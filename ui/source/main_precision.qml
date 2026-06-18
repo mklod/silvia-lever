@@ -42,7 +42,7 @@ ApplicationWindow {
     property bool boilerPrimed: false
     property bool boilerPreheated: false
     property var profiles: []                 // [{index,name}] from firmware
-    property real doseGrams: 18.0             // for brew RATIO (yield/dose)
+    property real doseGrams: 20.0             // for brew RATIO (yield/dose); set in Settings
 
     // setpointPopup: "" hidden, "brew" thermoblock, "steam" boiler
     property string setpointPopup: ""
@@ -120,7 +120,9 @@ ApplicationWindow {
         onBoilerPreheatedChanged: function(r) { window.boilerPreheated = r }
         onProfilesChanged: function(list) { window.profiles = list }
         onShotsChanged: function(list) { window.shotHistory = list; window.selectedShot = 0 }
+        onDoseChanged: function(g) { window.doseGrams = g }
         onErrorOccurred: function(e) {}
+        onAutotuneLineReceived: function(line) { autotuneOverlay.append(line) }
     }
 
     QtObject { id: connectionStatus; property bool connected: false }
@@ -184,11 +186,20 @@ ApplicationWindow {
                 }
                 Row {
                     anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
-                    spacing: 8
-                    Rectangle { width: 7; height: 7; radius: 3.5; color: Theme.red
-                                anchors.verticalCenter: parent.verticalCenter }
-                    Overline { text: connectionStatus.connected ? "READY" : "OFFLINE"; tracking: 3
-                               anchors.verticalCenter: parent.verticalCenter }
+                    spacing: 18
+                    Row {
+                        spacing: 8; anchors.verticalCenter: parent.verticalCenter
+                        Rectangle { width: 7; height: 7; radius: 3.5; color: Theme.red
+                                    anchors.verticalCenter: parent.verticalCenter }
+                        Overline { text: connectionStatus.connected ? "READY" : "OFFLINE"; tracking: 3
+                                   anchors.verticalCenter: parent.verticalCenter }
+                    }
+                    MouseArea {
+                        implicitWidth: 26; implicitHeight: 26
+                        anchors.verticalCenter: parent.verticalCenter
+                        onClicked: stackView.push(settingsScreen)
+                        Text { anchors.centerIn: parent; text: "⚙"; color: Theme.dim; font.pixelSize: 20 }
+                    }
                 }
             }
 
@@ -357,12 +368,6 @@ ApplicationWindow {
                                 label: modelData.l; value: modelData.v; unit: modelData.u
                                 valueColor: modelData.c; numeralSize: 54; align: Text.AlignHCenter
                             }
-                            // Tap the TIME clock to STOP while brewing.
-                            MouseArea {
-                                anchors.fill: parent
-                                enabled: modelData.l === "TIME" && window.currentState === "BREWING"
-                                onClicked: controller.stopBrew()
-                            }
                         }
                     }
                 }
@@ -389,8 +394,26 @@ ApplicationWindow {
                 series: window.pressSeries; maxT: window.brewMaxT; maxV: window.brewMaxPress
             }
 
+            // ── Large STOP target while brewing — a generous band centered on
+            //    the TIME clock so stop is easy to hit (not the whole screen, so
+            //    chart edges / back chip stay free).
+            Item {
+                visible: window.currentState === "BREWING"
+                z: 25
+                anchors.top: parent.top; anchors.topMargin: 8
+                anchors.horizontalCenter: parent.horizontalCenter
+                width: 460; height: 132
+                MouseArea { anchors.fill: parent; onClicked: controller.stopBrew() }
+                Text {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    anchors.bottom: parent.bottom
+                    text: "TAP TIMER TO STOP"; color: Theme.dim
+                    font.family: Theme.archivo; font.pixelSize: 12; font.letterSpacing: 1.5
+                }
+            }
+
             // ── Start affordance: tap anywhere to begin while heating. Hidden
-            //    once BREWING (then the charts show; tap the TIME clock to stop).
+            //    once BREWING (then the charts show; tap the timer band to stop).
             Item {
                 anchors.fill: parent
                 anchors.topMargin: 110            // leave the back chip + stats tappable
@@ -700,6 +723,168 @@ ApplicationWindow {
                         maxV: 10
                         clipT: detail.replayClip
                     }
+                }
+            }
+        }
+    }
+
+    // ═══ SETTINGS ══════════════════════════════════════════════════════════════
+    Component {
+        id: settingsScreen
+        Item {
+            Item {
+                anchors.top: parent.top; anchors.left: parent.left; anchors.right: parent.right
+                anchors.topMargin: 30; anchors.leftMargin: 40; anchors.rightMargin: 40
+                height: 56
+                BackChip { id: sback; size: 48; anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter
+                           onClicked: stackView.pop() }
+                Column {
+                    anchors.left: sback.right; anchors.leftMargin: 18; anchors.verticalCenter: parent.verticalCenter
+                    spacing: 2
+                    Overline { text: "SETTINGS" }
+                    Text { text: "Dose & calibration"; color: Theme.ink
+                           font.family: Theme.archivo; font.pixelSize: 24; font.weight: Theme.w600 }
+                }
+            }
+
+            Column {
+                anchors.top: parent.top; anchors.topMargin: 120
+                anchors.left: parent.left; anchors.leftMargin: 56
+                spacing: 30
+
+                // DOSE
+                Column {
+                    spacing: 12
+                    Overline { text: "DOSE — basket weight, drives RATIO" }
+                    Row {
+                        spacing: 16
+                        Rectangle { width: 72; height: 72; radius: 6; color: "transparent"; border.width: 1; border.color: Theme.hair
+                            Text { anchors.centerIn: parent; text: "−"; color: Theme.ink; font.family: Theme.archivo; font.pixelSize: 34 }
+                            MouseArea { anchors.fill: parent; onClicked: controller.setDose(window.doseGrams - 0.5) } }
+                        Item { width: 150; height: 72
+                            Row { anchors.centerIn: parent; spacing: 4
+                                Text { id: doseNum; text: window.doseGrams.toFixed(1); color: Theme.ink
+                                       font.family: Theme.archivo; font.pixelSize: 48; font.weight: Theme.w700 }
+                                Text { text: "g"; color: Theme.dim; anchors.baseline: doseNum.baseline
+                                       font.family: Theme.archivo; font.pixelSize: 18 } } }
+                        Rectangle { width: 72; height: 72; radius: 6; color: "transparent"; border.width: 1; border.color: Theme.hair
+                            Text { anchors.centerIn: parent; text: "+"; color: Theme.ink; font.family: Theme.archivo; font.pixelSize: 34 }
+                            MouseArea { anchors.fill: parent; onClicked: controller.setDose(window.doseGrams + 0.5) } }
+                    }
+                }
+
+                // SCALE
+                Column {
+                    spacing: 12
+                    Row { spacing: 16
+                        Overline { text: "SCALE"; anchors.verticalCenter: parent.verticalCenter }
+                        Text { text: "live " + window.currentWeight.toFixed(1) + " g"; color: Theme.dim
+                               anchors.verticalCenter: parent.verticalCenter
+                               font.family: Theme.mono; font.pixelSize: 12 }
+                    }
+                    Row { spacing: 16
+                        PButton { text: "TARE"; variant: "plain"; onClicked: controller.tareScales() }
+                        PButton { text: "CALIBRATE"; variant: "primary"; onClicked: calOverlay.shown = true }
+                    }
+                }
+
+                // PID
+                Column {
+                    spacing: 12
+                    Overline { text: "PID — thermoblock autotune" }
+                    PButton { width: 232; text: "AUTOTUNE"; variant: "primary"; onClicked: autotuneOverlay.start() }
+                }
+            }
+        }
+    }
+
+    // ── Calibration modal ─────────────────────────────────────────────────────
+    Item {
+        id: calOverlay
+        anchors.fill: parent; z: 210
+        property bool shown: false
+        property real calWeight: 100
+        visible: shown
+        onShownChanged: if (shown) controller.tareScales()   // zero before placing weight
+        Rectangle { anchors.fill: parent; color: Qt.rgba(0,0,0,0.86)
+                    MouseArea { anchors.fill: parent; onClicked: calOverlay.shown = false } }
+        Rectangle {
+            width: 520; anchors.centerIn: parent
+            implicitHeight: calCol.implicitHeight + 80
+            color: Theme.popup; radius: 8; border.width: 1; border.color: Theme.hair
+            Column {
+                id: calCol
+                anchors.fill: parent; anchors.margins: 40; spacing: 22
+                Overline { text: "SCALE CALIBRATION" }
+                Text { width: parent.width; wrapMode: Text.WordWrap
+                       text: "Tared on open. Place a known weight, set its mass, then CALIBRATE."
+                       color: Theme.dim; font.family: Theme.archivo; font.pixelSize: 14 }
+                Text { text: "live " + window.currentWeight.toFixed(1) + " g (uncal)"; color: Theme.dim
+                       font.family: Theme.mono; font.pixelSize: 13 }
+                Row {
+                    anchors.horizontalCenter: parent.horizontalCenter; spacing: 16
+                    Rectangle { width: 72; height: 72; radius: 6; color: "transparent"; border.width: 1; border.color: Theme.hair
+                        Text { anchors.centerIn: parent; text: "−"; color: Theme.ink; font.family: Theme.archivo; font.pixelSize: 34 }
+                        MouseArea { anchors.fill: parent; onClicked: calOverlay.calWeight = Math.max(10, calOverlay.calWeight - 10) } }
+                    Item { width: 150; height: 72
+                        Row { anchors.centerIn: parent; spacing: 4
+                            Text { id: calNum; text: calOverlay.calWeight.toFixed(0); color: Theme.ink
+                                   font.family: Theme.archivo; font.pixelSize: 48; font.weight: Theme.w700 }
+                            Text { text: "g"; color: Theme.dim; anchors.baseline: calNum.baseline
+                                   font.family: Theme.archivo; font.pixelSize: 18 } } }
+                    Rectangle { width: 72; height: 72; radius: 6; color: "transparent"; border.width: 1; border.color: Theme.hair
+                        Text { anchors.centerIn: parent; text: "+"; color: Theme.ink; font.family: Theme.archivo; font.pixelSize: 34 }
+                        MouseArea { anchors.fill: parent; onClicked: calOverlay.calWeight = Math.min(2000, calOverlay.calWeight + 10) } }
+                }
+                Rectangle {
+                    width: parent.width; height: 72; radius: 4; color: Theme.ink
+                    Text { anchors.centerIn: parent; text: "CALIBRATE"; color: "#000000"
+                           font.family: Theme.archivo; font.pixelSize: 22; font.weight: Theme.w700; font.letterSpacing: 2 }
+                    MouseArea { anchors.fill: parent; onClicked: { controller.calibrateScales(calOverlay.calWeight); calOverlay.shown = false } }
+                }
+            }
+        }
+    }
+
+    // ── Autotune modal ────────────────────────────────────────────────────────
+    Item {
+        id: autotuneOverlay
+        anchors.fill: parent; z: 210
+        property bool shown: false
+        property bool finished: false
+        property string logText: ""
+        visible: shown
+        function start() { logText = ""; finished = false; shown = true; controller.startAutotune() }
+        function append(line) {
+            logText += line + "\n"
+            if (line.indexOf("AUTOTUNE_RESULT:") === 0 || line.indexOf("AUTOTUNE:FAIL") === 0) finished = true
+            logFlick.contentY = Math.max(0, logText.length)   // nudge scroll
+        }
+        Rectangle { anchors.fill: parent; color: Qt.rgba(0,0,0,0.9) }
+        Rectangle {
+            width: 620; height: 420; anchors.centerIn: parent
+            color: Theme.popup; radius: 8; border.width: 1; border.color: Theme.hair
+            Column {
+                anchors.fill: parent; anchors.margins: 32; spacing: 16
+                Overline { text: autotuneOverlay.finished ? "PID AUTOTUNE · DONE" : "PID AUTOTUNE · RUNNING" }
+                Text { width: parent.width; wrapMode: Text.WordWrap
+                       text: "Relay autotune of the thermoblock — keep the machine undisturbed until it finishes."
+                       color: Theme.dim; font.family: Theme.archivo; font.pixelSize: 14 }
+                Rectangle {
+                    width: parent.width; height: 240; radius: 6; color: Qt.rgba(1,1,1,0.02)
+                    border.width: 1; border.color: Theme.hair; clip: true
+                    Flickable {
+                        id: logFlick; anchors.fill: parent; anchors.margins: 12
+                        contentHeight: logTxt.height; boundsBehavior: Flickable.StopAtBounds
+                        Text { id: logTxt; width: parent.width; text: autotuneOverlay.logText
+                               color: Theme.dim; font.family: Theme.mono; font.pixelSize: 11; wrapMode: Text.WrapAnywhere }
+                    }
+                }
+                PButton {
+                    width: parent.width
+                    text: autotuneOverlay.finished ? "CLOSE" : "STOP"
+                    variant: autotuneOverlay.finished ? "primary" : "alert"
+                    onClicked: { if (!autotuneOverlay.finished) controller.stopAutotune(); autotuneOverlay.shown = false }
                 }
             }
         }

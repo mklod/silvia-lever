@@ -8,6 +8,7 @@ class SettingsManager:
             "brew_temp": 93.0,
             "steam_temp": 121.11,   # 250 °F
             "scale_cal": 420.0,   # NAU7802 single calibration factor
+            "dose": 20.0,         # grams in the basket — drives brew RATIO
             "profiles": []
         }
     
@@ -21,7 +22,7 @@ class SettingsManager:
             pass
         return self.default_settings.copy()
     
-    def save_settings(self, brew_temp, steam_temp, scale_cal=None, pid=None):
+    def save_settings(self, brew_temp, steam_temp, scale_cal=None, pid=None, dose=None):
         """Save settings to file. `pid` is an optional (kp, ki, kd) tuple."""
         try:
             current_settings = self.load_settings()
@@ -29,6 +30,8 @@ class SettingsManager:
             current_settings["steam_temp"] = steam_temp
             if scale_cal is not None:
                 current_settings["scale_cal"] = scale_cal
+            if dose is not None:
+                current_settings["dose"] = dose
             if pid is not None:
                 current_settings["pid_kp"] = pid[0]
                 current_settings["pid_ki"] = pid[1]

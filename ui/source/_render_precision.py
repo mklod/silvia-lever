@@ -146,4 +146,9 @@ qml('window.selectedShot = 0')
 qml('stackView.push(historyScreen, StackView.Immediate)')
 grab("05_history.png")
 
+# 06 Settings
+qml('window.doseGrams = 20.0')
+qml('stackView.push(settingsScreen, StackView.Immediate)')
+grab("06_settings.png")
+
 print("DONE", OUT)
