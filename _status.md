@@ -1,7 +1,14 @@
 # Status
 
 ## Current milestone
-**Alpha+ — boiler live (Stage 9), staged dual-heat verified.** Steam boiler enabled on branch `boiler-stage9` and confirmed working on hardware: cold-start staging (boiler first to steam temp, thermoblock inhibited until `BOILER_READY`, then thermoblock to setpoint), digitalWrite steam-SSR fix (pin 16 has no PWM), task-switch heater arbitration (BREW → boiler coasts via tick-mutex; STEAM → thermoblock hard-cut). OPV tuned. Pending: level probe (Silvia Pro probe ordered) for auto-fill / dry-fire safety; merge boiler-stage9 → master after extended steam testing. Thermoblock PID: Kp/Ki/Kd = 46.94/0.516/3155.89 (TL).
+**Beta — "Precision Instrument" UI redesign LIVE + functional replay.** All work lives on branch **`redesign-precision`** (32 commits ahead of `master`; master is stale — NOT yet merged). The full monochrome+red touchscreen redesign is the live UI (`main_precision.qml` + `precision/` component lib; old `main.qml` retained as fallback). Boiler Stage 9 (staged dual-heat, arbitration, OPV tuned) is in and working. Since the redesign went live: functional **shot replay** (firmware follows a recorded pressure curve — flashed), **Settings screen** (dose + scale cal + PID autotune), persisted **dose** drives RATIO, bigger brew stop target, heaters ON by default. Pump correctly documented as **Fluid-o-Tech FG300 24 V BLDC gear pump** (0–5 V PWM control — NOT vibratory). Thermoblock PID: 46.94/0.516/3155.89 (TL).
+**Pending:** merge `redesign-precision` → master after real-world use; hardware test of functional replay (pull a replayed shot); level probe (Silvia Pro) for auto-fill/dry-fire.
+
+## Session 2026-07-06 — Doc audit + stale-reference cleanup
+- **Pump docs corrected everywhere.** `PLUMBING_NOTES.md` mislabelled the pump "Ulka-style vibratory" (topology diagram + a debug note referencing a "pump solenoid" / "cutting AC"). It is a **Fluid-o-Tech FG300 24 V BLDC gear pump**; 24 V is motor supply only, speed control is a separate 0–5 V input (pot → Teensy PWM → 1k/470 nF RC filter, so a 10 V cap on that filter is fine). Fixed. Remaining `solenoid` refs are the real 3-way **valves** (V1/V2); `vibration` refs are lever/load-cell mechanical noise — both legitimate.
+- **Repo hygiene:** deleted stray `NDH6SA~M` ping-output junk files; gitignored `archive/` (**8.1 GB** of deprecated OS images that were untracked).
+- **Untracked reference material still undecided:** `UI.UX/` (redesign design handoff/spec), `profiles/` (profiling research PDFs/imgs), `RC FILTER … .jpg` (PCB photo). Kept out of git pending a decision to track them or not.
+- **CHANGELOG was ~1 month behind** (last build entry 2026-06-02); the entire redesign/replay/settings era wasn't logged. Catching it up.
 
 ## Session 2026-06-16 (18:50) — "Precision Instrument" UI redesign LIVE + heaters-off default
 - **Heaters OFF by default.** Firmware `heatersEnabled` default → false; UI also pushes `SET_HEATERS_ENABLE 0` on connect (Teensy keeps state across Pi reboots, so the UI must disable each startup). User taps HEAT to enable. Verified `OK:HEATERS_DISABLED` on boot.

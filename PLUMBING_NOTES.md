@@ -60,7 +60,7 @@ Swap the V2 OUT1 and OUT2 connections so the portafilter manifold sits on the po
 The pressure sensor is mounted directly on the portafilter manifold. Before the fix, the sensor read manifold pressure — which was decoupled from V2's switching state because the manifold was on the always-connected port. The reading "rising to 6–7 bar" when toggling V2 was a transient back-pressure spike, not actual flow rerouting.
 
 ### Diagnostic that nailed it
-Cutting AC bled pressure to zero over 5 seconds. This works because the pump's outlet check valve is the only thing holding line pressure when the pump stops; cutting AC fully de-energises the pump solenoid and lets the check valves snap open, allowing slow back-bleed through the pump. If V2 had been correctly plumbed, switching V2 to drain would have bled pressure faster than the pump check valve eventually does.
+Cutting power bled pressure to zero over 5 seconds. This works because the pump's outlet check valve is the only thing holding line pressure when the pump stops; with the FG300 unpowered the gear set no longer holds against back-pressure, so line pressure slowly back-bleeds through the stopped pump. If V2 had been correctly plumbed, switching V2 to drain would have bled pressure faster than the stopped pump eventually does.
 
 ---
 

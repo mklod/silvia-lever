@@ -26,3 +26,8 @@ Thumbs.db
 
 # RPi screenshots (ephemeral debugging artifacts)
 tools/rpi_*.png
+
+# Deprecated OS-image archive (hundreds of MB of binaries — never commit)
+archive/
+# Stray ping-output artifacts (accidental redirects)
+NDH6SA~M

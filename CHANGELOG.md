@@ -5,13 +5,23 @@
 > - Plug Teensy into RPi (via udev rule, should auto-detect as `/dev/ttyACM0` with no ModemManager interference) and verify end-to-end telemetry on the touchscreen
 > - **Scale drift-compensation EMA** (Decent OpenScale trick #3): `f_driftCompensation += diff * 0.3` to absorb thermal baseline creep. Gate on "no recent brew" so it doesn't eat real slow loads. See `workplan.md` Scale FW Audit section.
 > - **Scale stable-output threshold** (Decent OpenScale trick #5): only push weight value to telemetry when `|delta| > threshold`. Cheap UI redraw saver, low priority.
+> - **Merge `redesign-precision` → master** after real-world use (branch is 32 commits ahead; master is stale).
+> - **Hardware-test functional replay** — pull a replayed shot and confirm the pump tracks the recorded pressure curve.
 > - Extended brew + steam + flush sessions on real hardware
 > - PID tuning once thermoblock has reached setpoint a few times
-> - Profile system (Stage 8) after a few weeks of real-world use
-> - Autostart silvia on RPi boot (systemd user unit or labwc-pi autostart) so no tap needed at power-on
-> - **UI access to scale calibration + PID autotune** (deferred): these were intentionally pulled out of the home flow (gauge tap now opens a per-loop setpoint popup only). Need a discreet way back to them — e.g. a long-press on a gauge, a hidden corner tap, or a gear icon → the existing `settingsScreen`. Decide the gesture and wire it. **Note:** `settingsScreen` temp controls still show °C (not converted in the 2026-06-02 °F pass since it's unreachable) — convert to °F when wiring the re-entry gesture.
-> - **RC filter on the pump pot** (low priority now): adds analog smoothing to the pot reading. Less urgent than thought — manual takeover under the profile engine already feels responsive and smooth, noticeably better than plain manual mode. Revisit only if pot jitter shows up in a brew log.
+> - **RC filter on the FG300 pump pot/PWM** (low priority): 1k + 470 nF on the 0–5 V speed-control line (NOT the 24 V rail — a 10 V cap suffices). Analog smoothing of the pot→PWM control. Revisit only if pot jitter shows in a brew log.
+> - Store the active profile name in each brew_log so Shot History shows it (currently "—").
 > - **Pi undervoltage during Teensy flash / silvia restart** (low priority): brief brownouts drop the Pi off-network mid-flash. 5V cable + supply are good; stable during normal runtime, so not a real concern operationally. Likely USB-port inrush when the Teensy re-enumerates, not the rail. Flashing recovers fine. Investigate (vcgencmd get_throttled, try powering Teensy separately) only if it becomes disruptive.
+
+## Build 2026-06-16 → 07-06 — "Precision Instrument" redesign, functional replay, Settings/dose
+
+Large body of work on branch **`redesign-precision`** (see `git log master..redesign-precision` for the granular history). Highlights:
+
+- **Full UI redesign ("Precision Instrument").** New root `main_precision.qml` + `precision/` component library (Theme singleton, ColumnMeter, ChartCard, PhaseChart, StatusBar, PButton, etc.), true-black monochrome + single red accent, bundled Archivo + JetBrains Mono. Five screens: Home (vertical meters + hero numerals), Set-temp modal, Brew (live white-mass/red-pressure glow charts), Profile picker (firmware-accurate phase data + PhaseChart + table), Shot history/replay (scrollable). Old `main.qml` retained as fallback. Switched live (`run_silvia.py`/`main.py` load the new root).
+- **Functional shot replay.** Firmware follows a recorded shot's pressure curve as the pump setpoint (`REPLAY_LOAD`/`REPLAY_PT`/`BEGIN_REPLAY`; interp + existing pump PI; pot takeover; auto-stop at curve end) — flashed. Backend `loadReplay()`/`beginReplay()`; History REPLAY loads the curve, heats, and arms a "TAP TO REPLAY" start.
+- **Settings screen** (gear on Home): persisted **DOSE** stepper (drives RATIO — was hardcoded 18 g, now real dose default 20 g, saved in `settings.json`), **SCALE** tare + known-weight calibrate, **PID AUTOTUNE** progress modal. Closes the old "UI access to scale-cal + autotune" TODO.
+- **Defaults/behavior:** default steam temp 250 °F (121.11 °C) + setpoints restored to firmware on connect; heaters ON by default at boot (with a dev toggle used during development); PRIME reworked to a 3-state fill→confirm that actually stops the pump; larger brew stop target; brew-timer reset/double-log fix.
+- **Docs:** OG Silvia operation + level-sensing + hardware-watchdog references (earlier); pump corrected to **Fluid-o-Tech FG300 24 V BLDC gear pump** (0–5 V PWM control, not vibratory) across `PLUMBING_NOTES.md`; repo hygiene (gitignored 8.1 GB `archive/`, removed stray junk).
 
 ## Build 2026-06-02--1314 — UX pass: °F, cyan/purple gauges, AUTO + auto-heat defaults
 
