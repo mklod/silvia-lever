@@ -14,6 +14,10 @@ Item {
     property string variant: "primary"
     property bool enabledLook: true
     property bool active: false
+    // Debounce: a second press inside this window is ignored, so a bouncy /
+    // accidental double-tap can't toggle a latching button (FLUSH on→off).
+    property int debounceMs: 450
+    property double _lastClickMs: 0
     signal clicked()
 
     implicitWidth: 150
@@ -62,6 +66,11 @@ Item {
     MouseArea {
         anchors.fill: parent
         enabled: root.enabledLook
-        onClicked: root.clicked()
+        onClicked: {
+            var now = Date.now()
+            if (now - root._lastClickMs < root.debounceMs) return   // swallow bounce
+            root._lastClickMs = now
+            root.clicked()
+        }
     }
 }

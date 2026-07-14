@@ -243,12 +243,15 @@ unsigned long lastSteamTempRead = 0;
 unsigned long lastPressureRead  = 0;
 unsigned long lastSerialSend    = 0;
 
-// Scale: non-blocking 6-sample accumulator for trimmed-mean averaging.
-// At NAU7802_SPS_20 each conversion is integrated by the chip's internal sinc
-// filter over 50 ms = 3 cycles of 60 Hz / 2.5 cycles of 50 Hz mains. We then
-// drop the high+low of every 6-sample window and average the remaining 4 to
-// catch any residual outliers (relay clicks, motor brush spikes).
-const uint8_t SCALE_BUF_SIZE = 6;
+// Scale: non-blocking 8-sample accumulator for trimmed-mean averaging.
+// At NAU7802_SPS_80 each conversion lands every 12.5 ms, so an 8-sample window
+// spans exactly 100 ms = 6 cycles of 60 Hz / 5 cycles of 50 Hz. Mains hum is
+// therefore still cancelled by the WINDOW (not by a single conversion's sinc),
+// while a fresh weight is published every 100 ms instead of every 300 ms —
+// matching TELEMETRY_INTERVAL so mid-brew mass no longer steps in big jumps.
+// We drop the high+low of each window and average the remaining 6 to reject
+// outliers (relay clicks, motor spikes).
+const uint8_t SCALE_BUF_SIZE = 8;
 long scaleBuf[SCALE_BUF_SIZE];
 uint8_t scaleBufN = 0;
 
@@ -391,7 +394,8 @@ void setup() {
   if (!scale.begin()) {
     Serial.println("ERROR:NAU7802_INIT_FAILED");
   } else {
-    scale.setSampleRate(NAU7802_SPS_20);  // mains-aligned (50 ms = 3 cycles 60 Hz)
+    scale.setSampleRate(NAU7802_SPS_80);  // 12.5 ms/conv; 8-sample window = 100 ms
+                                          // = 6 cycles 60 Hz (mains-aligned window)
     scale.calibrateAFE();
     Serial.println("NAU7802 OK");
   }
@@ -774,9 +778,10 @@ void updateSensors() {
 
   // ── Scale (NAU7802) ─────────────────────────────────────────────────────
   // Non-blocking trimmed-mean: pull a raw reading whenever the chip flags one
-  // ready, accumulate 6, then drop high+low and average the middle 4. With
-  // SPS=20 each output is a fresh 6×50 ms = 300 ms window, sinc-filtered and
-  // outlier-trimmed. Empty-tray deadband suppresses last-digit twitch.
+  // ready, accumulate 8, then drop high+low and average the middle 6. With
+  // SPS=80 each output is a fresh 8×12.5 ms = 100 ms window — mains-aligned
+  // (6 cycles of 60 Hz) and outlier-trimmed, published at the telemetry rate.
+  // Empty-tray deadband suppresses last-digit twitch.
   if (scale.available()) {
     scaleBuf[scaleBufN++] = scale.getReading();
     if (scaleBufN >= SCALE_BUF_SIZE) {

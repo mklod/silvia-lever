@@ -44,6 +44,16 @@ ApplicationWindow {
     property var profiles: []                 // [{index,name}] from firmware
     property real doseGrams: 20.0             // for brew RATIO (yield/dose); set in Settings
 
+    // Smoothed mass for display. The firmware publishes a fresh trimmed-mean
+    // weight every 100 ms; without this the numeral steps in visible jumps
+    // mid-brew. Animate between samples so the readout glides. Display only —
+    // charts/logging still use the raw currentWeight.
+    property real displayWeight: 0
+    Behavior on displayWeight { NumberAnimation { duration: 260; easing.type: Easing.OutQuad } }
+    onCurrentWeightChanged: displayWeight = currentWeight
+    // What the brew screen should show (frozen final value after a shot ends).
+    readonly property real shownWeight: brewDisplayFrozen ? frozenWeight : displayWeight
+
     // setpointPopup: "" hidden, "brew" thermoblock, "steam" boiler
     property string setpointPopup: ""
 
@@ -240,10 +250,11 @@ ApplicationWindow {
                         setF: window.cToF(window.steamTargetTemp)
                         btn1Text: "STEAM"; btn1Variant: "primary"
                         btn1Active: window.steamActive          // text white→red while steaming
-                        // PRIME is a 3-state: idle → fill → confirm-overflow. While
-                        // filling, tapping confirms (primeDone) and STOPS the pump.
-                        // Primed = red outline (armed), label stays "PRIME".
-                        btn2Text: window.currentState === "PRIMING_STEAM" ? "OVERFLOW? TAP" : "PRIME"
+                        // PRIME is a 3-state: idle → filling → primed. While filling
+                        // the label is just "PRIMING" (red, in-action — matches
+                        // FLUSH/STEAM); tapping it confirms (primeDone) and STOPS
+                        // the pump. Primed = red outline, label back to "PRIME".
+                        btn2Text: window.currentState === "PRIMING_STEAM" ? "PRIMING" : "PRIME"
                         btn2Variant: window.currentState === "PRIMING_STEAM" ? "alert"
                                      : (window.boilerPrimed ? "outline" : "plain")
                         onMeterTapped: window.setpointPopup = "steam"
@@ -355,9 +366,9 @@ ApplicationWindow {
                     readonly property real cell: (width) / 4
                     Repeater {
                         model: [
-                            { l: "MASS", v: (window.brewDisplayFrozen ? window.frozenWeight : window.currentWeight).toFixed(1), u: "g", c: Theme.ink },
+                            { l: "MASS", v: window.shownWeight.toFixed(1), u: "g", c: Theme.ink },
                             { l: "TIME", v: window.brewTime, u: "", c: Theme.red },
-                            { l: "RATIO", v: window.fmtRatio(window.brewDisplayFrozen ? window.frozenWeight : window.currentWeight), u: "", c: Theme.ink },
+                            { l: "RATIO", v: window.fmtRatio(window.shownWeight), u: "", c: Theme.ink },
                             { l: "BREW TEMP", v: window.cToF(window.brewTempActual).toFixed(0), u: "°F", c: Theme.ink }
                         ]
                         delegate: Item {
@@ -379,7 +390,7 @@ ApplicationWindow {
                 anchors.leftMargin: 40; anchors.rightMargin: 40
                 height: 168
                 title: "COFFEE MASS"
-                valueText: (window.brewDisplayFrozen ? window.frozenWeight : window.currentWeight).toFixed(1)
+                valueText: window.shownWeight.toFixed(1)
                 unit: "g"; traceColor: Theme.mass
                 series: window.massSeries; maxT: window.brewMaxT; maxV: window.brewMaxMass
             }
