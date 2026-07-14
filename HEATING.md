@@ -458,3 +458,53 @@ else if (boiler wants heat this tick)
 - Earlier: `COLD_TEST_MODE` for dry / flow-only bring-up; `controlBrewHeater`
   PID originally Kp=30 → dropped to 8 after first hot test showed
   excessive overshoot with saturated output.
+
+---
+
+## 8. OPEN (!!!): Brew temp stability + water-output accuracy
+
+**Status: unresolved — needs a hardware experiment, NOT a blind gain change.**
+
+### Symptom (reported 2026-07-06)
+Post-flush the thermoblock **overshoots hard and then bounces around** the setpoint.
+Separately: we have never verified what the **thermoblock setpoint actually maps to in
+water-output temperature at the puck**.
+
+These are two different problems. Don't conflate them.
+
+### (a) Stability — likely mechanism (from the code, not measured yet)
+`controlBrewHeater()` is bang-bang + PID with a **5 °C warmup band**:
+
+- `WARMUP_BAND_C = 5.0` — while `error > 5 °C` the heater runs **full PWM (255)** and the
+  integrator is held at 0.
+- Inside the band it hands to PID (autotuned Tyreus-Luyben: Kp 46.94 / Ki 0.516 / Kd 3155.89).
+
+A flush drives cold water through the block, so the error goes **far** outside the band →
+full 255 PWM. The heater cartridge and the PT1000 are separated by aluminium thermal lag, so
+by the time the *sensor* re-enters the band, a large slug of energy is still in transit →
+**overshoot**, then the large D-term fights it → **ringing**. The TL gains were autotuned
+around *steady state*, not around a cold-water disturbance, so there is no reason to expect
+them to reject it well.
+
+Candidate fixes (only after measurement): narrower/asymmetric warmup band, integral clamp
+(anti-windup) inside the band, a flow/flush feed-forward term, or re-tuning against the
+disturbance rather than at steady state.
+
+### (b) Accuracy — the PT1000 measures the BLOCK, not the water
+Water-out temperature ≠ block setpoint, and the offset **varies with flow rate**. We have
+never characterised this. Until we do, "93 °C" is a block number, not a brew number.
+
+### Experiment protocol (do this before touching any gains)
+1. **Water-out characterisation.** Thermocouple / fast thermometer in the output stream at the
+   group. For each block setpoint (e.g. 90 / 93 / 96 °C) and a couple of fixed pump rates,
+   run water and record steady-state **water-out** temp. Produces an offset curve
+   (block → water) vs flow. This is what makes the setpoint *mean* something.
+2. **Post-flush recovery capture.** The session log already records `brewTemp` and
+   `heaterBrew` in every 100 ms DATA packet. Do a flush, then let it recover, and pull the
+   curve from `ui/source/logs/*.log`. Quantify: dip depth, overshoot magnitude, settling time,
+   ringing period. That gives us the real disturbance response — no guessing.
+3. **Only then** tune: use the measured response to choose between band/anti-windup/feed-forward,
+   and re-verify with the same capture.
+
+**Do not** adjust `WARMUP_BAND_C` or the PID gains until steps 1–2 exist. The current gains are
+autotuned and at least stable at steady state; a blind change risks losing that.
