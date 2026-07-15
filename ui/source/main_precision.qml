@@ -44,12 +44,13 @@ ApplicationWindow {
     property var profiles: []                 // [{index,name}] from firmware
     property real doseGrams: 20.0             // for brew RATIO (yield/dose); set in Settings
 
-    // Smoothed mass for display. The firmware publishes a fresh trimmed-mean
-    // weight every 100 ms; without this the numeral steps in visible jumps
-    // mid-brew. Animate between samples so the readout glides. Display only —
-    // charts/logging still use the raw currentWeight.
+    // Smoothed mass for display. The firmware now publishes a fresh trimmed-mean
+    // weight every 100 ms (matching telemetry), so the readout only needs a light
+    // ease to soften the 0.1–0.4 g steps — short enough (≈ the update interval)
+    // that it tracks the live value instead of lagging behind it. Display only;
+    // charts/logging use the raw currentWeight.
     property real displayWeight: 0
-    Behavior on displayWeight { NumberAnimation { duration: 260; easing.type: Easing.OutQuad } }
+    Behavior on displayWeight { NumberAnimation { duration: 90; easing.type: Easing.Linear } }
     onCurrentWeightChanged: displayWeight = currentWeight
     // What the brew screen should show (frozen final value after a shot ends).
     readonly property real shownWeight: brewDisplayFrozen ? frozenWeight : displayWeight
