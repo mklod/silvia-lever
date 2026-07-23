@@ -360,28 +360,30 @@ ApplicationWindow {
                 height: 80
                 BackChip { id: bback; anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter
                            onClicked: { controller.stopBrew(); window.replayArmed = false; stackView.pop() } }
+                // Explicit cells (NOT a Repeater with an inline-array model — that
+                // rebuilt all 4 delegates on every weight change, ~60x/s during the
+                // ease, which janked the live readout down to ~1 Hz). Now only the
+                // bound Text inside each StatItem re-renders.
                 Row {
                     id: statsRow
                     anchors.left: bback.right; anchors.leftMargin: 30; anchors.right: parent.right
                     anchors.verticalCenter: parent.verticalCenter
-                    readonly property real cell: (width) / 4
-                    Repeater {
-                        model: [
-                            { l: "MASS", v: window.shownWeight.toFixed(1), u: "g", c: Theme.ink },
-                            { l: "TIME", v: window.brewTime, u: "", c: Theme.red },
-                            { l: "RATIO", v: window.fmtRatio(window.shownWeight), u: "", c: Theme.ink },
-                            { l: "BREW TEMP", v: window.cToF(window.brewTempActual).toFixed(0), u: "°F", c: Theme.ink }
-                        ]
-                        delegate: Item {
-                            width: statsRow.cell; height: 80
-                            StatItem {
-                                anchors.verticalCenter: parent.verticalCenter
-                                width: parent.width - 10
-                                label: modelData.l; value: modelData.v; unit: modelData.u
-                                valueColor: modelData.c; numeralSize: 54; align: Text.AlignHCenter
-                            }
+                    readonly property real cell: width / 4
+                    component StatCell: Item {
+                        width: statsRow.cell; height: 80
+                        property alias label: si.label
+                        property alias value: si.value
+                        property alias unit: si.unit
+                        property alias valueColor: si.valueColor
+                        StatItem {
+                            id: si; anchors.verticalCenter: parent.verticalCenter
+                            width: parent.width - 10; numeralSize: 54; align: Text.AlignHCenter
                         }
                     }
+                    StatCell { label: "MASS";      value: window.shownWeight.toFixed(1); unit: "g" }
+                    StatCell { label: "TIME";      value: window.brewTime; valueColor: Theme.red }
+                    StatCell { label: "RATIO";     value: window.fmtRatio(window.shownWeight) }
+                    StatCell { label: "BREW TEMP"; value: window.cToF(window.brewTempActual).toFixed(0); unit: "°F" }
                 }
             }
             ChartCard {

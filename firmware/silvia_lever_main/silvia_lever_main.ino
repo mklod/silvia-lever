@@ -252,8 +252,9 @@ unsigned long lastSerialSend    = 0;
 // We drop the high+low of each window and average the remaining 6 to reject
 // outliers (relay clicks, motor spikes).
 const uint8_t SCALE_BUF_SIZE = 8;
-long scaleBuf[SCALE_BUF_SIZE];
-uint8_t scaleBufN = 0;
+long scaleBuf[SCALE_BUF_SIZE];   // ring buffer of the last N raw readings
+uint8_t scaleBufN = 0;           // filled count (caps at SCALE_BUF_SIZE)
+uint8_t scaleBufHead = 0;        // ring write index
 
 // ─── Autotune (relay-feedback, Åström-Hägglund) ──────────────────────────────
 // Pressing AUTOTUNE in settings runs this in place of the PID. Thermoblock
@@ -783,25 +784,30 @@ void updateSensors() {
   // (6 cycles of 60 Hz) and outlier-trimmed, published at the telemetry rate.
   // Empty-tray deadband suppresses last-digit twitch.
   if (scale.available()) {
-    scaleBuf[scaleBufN++] = scale.getReading();
-    if (scaleBufN >= SCALE_BUF_SIZE) {
-      // insertion sort — fine for n=6
-      for (uint8_t i = 1; i < SCALE_BUF_SIZE; i++) {
-        long key = scaleBuf[i];
+    // Push into the ring buffer, then recompute the trimmed mean on EVERY new
+    // sample — so sys.weight refreshes at the sample/loop rate, not once per
+    // full 8-sample window. (The old "fill 8 then emit" made weight update only
+    // ~2–5 Hz because the loop pulls one sample per iteration.)
+    scaleBuf[scaleBufHead] = scale.getReading();
+    scaleBufHead = (scaleBufHead + 1) % SCALE_BUF_SIZE;
+    if (scaleBufN < SCALE_BUF_SIZE) scaleBufN++;
+
+    if (scaleBufN >= 3) {
+      long tmp[SCALE_BUF_SIZE];
+      for (uint8_t i = 0; i < scaleBufN; i++) tmp[i] = scaleBuf[i];
+      // insertion sort tmp[0..scaleBufN-1]
+      for (uint8_t i = 1; i < scaleBufN; i++) {
+        long key = tmp[i];
         int8_t j = i - 1;
-        while (j >= 0 && scaleBuf[j] > key) {
-          scaleBuf[j + 1] = scaleBuf[j];
-          j--;
-        }
-        scaleBuf[j + 1] = key;
+        while (j >= 0 && tmp[j] > key) { tmp[j + 1] = tmp[j]; j--; }
+        tmp[j + 1] = key;
       }
       long sum = 0;
-      for (uint8_t i = 1; i < SCALE_BUF_SIZE - 1; i++) sum += scaleBuf[i];
-      long avg = sum / (SCALE_BUF_SIZE - 2);
+      for (uint8_t i = 1; i < scaleBufN - 1; i++) sum += tmp[i];   // drop hi + lo
+      long avg = sum / (scaleBufN - 2);
       float w = (float)(avg - scale.getZeroOffset()) / scale.getCalibrationFactor();
       if (fabsf(w) < 0.15f) w = 0.0f;
       sys.weight = w;
-      scaleBufN = 0;
     }
   }
 
