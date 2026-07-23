@@ -48,6 +48,23 @@ Rectangle {
         anchors.left: parent.left; anchors.right: parent.right; anchors.bottom: parent.bottom
         anchors.leftMargin: 14; anchors.rightMargin: 14; anchors.bottomMargin: 12
 
+        // Rasterize off the GUI thread so live-brew repaints can't jank the
+        // rest of the UI (the MASS numeral etc.).
+        renderStrategy: Canvas.Threaded
+
+        // Trace the polyline path once; stroked in multiple passes below.
+        function tracePath(ctx) {
+            var s = root.series
+            ctx.beginPath()
+            var started = false
+            for (var i = 0; i < s.length; i++) {
+                if (s[i].t > root.clipT) break
+                var x = (s[i].t / root.maxT) * width
+                var y = height - (s[i].v / root.maxV) * height
+                if (!started) { ctx.moveTo(x, y); started = true } else ctx.lineTo(x, y)
+            }
+        }
+
         onPaint: {
             var ctx = getContext("2d")
             ctx.reset()
@@ -63,23 +80,24 @@ Rectangle {
 
             var s = root.series
             if (!s || s.length < 2) return
-            ctx.save()
-            ctx.shadowColor = root.traceColor
-            ctx.shadowBlur = 8
-            ctx.strokeStyle = root.traceColor
-            ctx.lineWidth = 2.5
+
+            // Glow via layered strokes, NOT ctx.shadowBlur. shadowBlur is a
+            // per-draw Gaussian blur — on the Pi it cost enough per repaint
+            // (2 charts × growing polyline, every 250 ms during a brew) to
+            // jank the GUI thread and drag the live readouts to ~1 Hz.
+            // Three cheap passes read the same on the OLED.
             ctx.lineJoin = "round"
             ctx.lineCap = "round"
-            ctx.beginPath()
-            var started = false
-            for (var i = 0; i < s.length; i++) {
-                if (s[i].t > root.clipT) break
-                var x = (s[i].t / root.maxT) * width
-                var y = height - (s[i].v / root.maxV) * height
-                if (!started) { ctx.moveTo(x, y); started = true } else ctx.lineTo(x, y)
-            }
-            ctx.stroke()
-            ctx.restore()
+            var c = root.traceColor
+            ctx.strokeStyle = Qt.rgba(c.r, c.g, c.b, 0.10)
+            ctx.lineWidth = 9
+            tracePath(ctx); ctx.stroke()
+            ctx.strokeStyle = Qt.rgba(c.r, c.g, c.b, 0.25)
+            ctx.lineWidth = 5
+            tracePath(ctx); ctx.stroke()
+            ctx.strokeStyle = c
+            ctx.lineWidth = 2.5
+            tracePath(ctx); ctx.stroke()
         }
     }
 }
