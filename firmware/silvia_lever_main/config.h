@@ -100,11 +100,12 @@
 #define PUMP_PWM_FULL  254
 
 // Quiet cap for the open-loop full-speed states (FLUSHING + both PRIMING
-// fills): 65% of full. Gear-mesh whine scales steeply with RPM and these are
-// the only states that ran the pump flat out — extraction is closed-loop and
-// slow. Costs a little fill/flush time, removes the scream. (Manual pot
-// control and the brew pressure loops keep their full range.)
-#define PUMP_PWM_QUIET 165
+// fills): 50% of full. Spectrogram analysis (2026-08-19) found the dominant
+// noise is gear-mesh orders (7–16x shaft) amplified by a ~650–1000 Hz
+// structural resonance; at 50% the mesh fundamentals sit below that band.
+// (65% still clipped its lower edge.) Costs fill/flush time, removes the
+// whine. Manual pot control and the brew pressure loops keep full range.
+#define PUMP_PWM_QUIET 127
 
 // Manual-drive zero deadband (pot counts, 0–255 scale ≈ 4%). At/below this the
 // pump is forced OFF, overriding the bumpless handover offset. Without it,
