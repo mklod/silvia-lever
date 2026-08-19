@@ -842,7 +842,7 @@ void updateSystemLogic() {
       setValve(VALVE_PUMP_PIN, false);
       setValve(VALVE_THERMOBLOCK_PIN, false);
       digitalWrite(PUMP_ENA_PIN, HIGH);
-      analogWrite(PUMP_PWM_PIN, PUMP_PWM_FULL);
+      analogWrite(PUMP_PWM_PIN, PUMP_PWM_QUIET);   // 65% — noise cap
       // Safety watchdog: abort if confirmation never arrives
       if (millis() - primeStartTime >= PRIME_SAFETY_TIMEOUT_MS) {
         digitalWrite(PUMP_ENA_PIN, LOW);
@@ -858,7 +858,7 @@ void updateSystemLogic() {
       setValve(VALVE_PUMP_PIN, true);
       setValve(VALVE_THERMOBLOCK_PIN, false);
       digitalWrite(PUMP_ENA_PIN, HIGH);
-      analogWrite(PUMP_PWM_PIN, PUMP_PWM_FULL);
+      analogWrite(PUMP_PWM_PIN, PUMP_PWM_QUIET);   // 65% — noise cap
       // Safety watchdog
       if (millis() - primeStartTime >= PRIME_SAFETY_TIMEOUT_MS) {
         digitalWrite(PUMP_ENA_PIN, LOW);
@@ -915,7 +915,10 @@ void updateSystemLogic() {
       setValve(VALVE_PUMP_PIN, false);
       setValve(VALVE_THERMOBLOCK_PIN, true);
       digitalWrite(PUMP_ENA_PIN, HIGH);
-      analogWrite(PUMP_PWM_PIN, PUMP_PWM_FULL);
+      // 65% noise cap. Backflush still works: against a blind basket flow → 0,
+      // so the pump still builds to OPV-crack pressure (4 mm gears reach 12+
+      // bar at low flow even at ~2 V control) — it just builds a bit slower.
+      analogWrite(PUMP_PWM_PIN, PUMP_PWM_QUIET);
       break;
 
     case STATE_IDLE:

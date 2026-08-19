@@ -99,6 +99,13 @@
 // which some motor drivers don't respond to.
 #define PUMP_PWM_FULL  254
 
+// Quiet cap for the open-loop full-speed states (FLUSHING + both PRIMING
+// fills): 65% of full. Gear-mesh whine scales steeply with RPM and these are
+// the only states that ran the pump flat out — extraction is closed-loop and
+// slow. Costs a little fill/flush time, removes the scream. (Manual pot
+// control and the brew pressure loops keep their full range.)
+#define PUMP_PWM_QUIET 165
+
 // ─── Auto Pre-Infusion (BREWING sub-state machine) ───────────────────────────
 // Auto-brew sub-state machine (Stage 0 — slew-rate-limited single-loop):
 //   PREINFUSE: closed-loop PI to PREINFUSE_TARGET_BAR (1.0 bar). Exits on the
