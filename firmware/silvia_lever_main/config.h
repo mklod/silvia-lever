@@ -106,6 +106,13 @@
 // control and the brew pressure loops keep their full range.)
 #define PUMP_PWM_QUIET 165
 
+// Manual-drive zero deadband (pot counts, 0–255 scale ≈ 4%). At/below this the
+// pump is forced OFF, overriding the bumpless handover offset. Without it,
+// (a) pot-zero after a takeover still ran the pump at the residual offset, and
+// (b) a few counts of pot/ADC offset put 0.2–0.3 V on SPEED_IN — the region
+// where the Fluid-o-Tech driver runs its 300 rpm floor instead of stopping.
+#define POT_ZERO_DEADBAND 10
+
 // ─── Auto Pre-Infusion (BREWING sub-state machine) ───────────────────────────
 // Auto-brew sub-state machine (Stage 0 — slew-rate-limited single-loop):
 //   PREINFUSE: closed-loop PI to PREINFUSE_TARGET_BAR (1.0 bar). Exits on the

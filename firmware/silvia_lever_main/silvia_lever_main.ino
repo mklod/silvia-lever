@@ -890,8 +890,11 @@ void updateSystemLogic() {
       if (sys.brewPhase == BREW_PHASE_EXTRACT) {
         // Manual: pot drives PWM with the bumpless offset captured at takeover
         // (0 if the brew started in manual). pot down → PWM down (taper).
-        int pwm = constrain(sys.pumpPower + sys.handoverOffset,
-                            0, PUMP_PWM_FULL);
+        // Pot at/near zero = user wants OFF: force 0, overriding the offset
+        // (and staying below the driver's 300 rpm floor region).
+        int pwm = (sys.pumpPower <= POT_ZERO_DEADBAND) ? 0
+                  : constrain(sys.pumpPower + sys.handoverOffset,
+                              0, PUMP_PWM_FULL);
         analogWrite(PUMP_PWM_PIN, pwm);
         sys.lastPumpPwm = pwm;
       } else if (gReplayMode) {
@@ -1202,7 +1205,8 @@ void runReplayEngine() {
     sys.handoverOffset = sys.lastPumpPwm - sys.pumpPower;
     sys.brewPhase = BREW_PHASE_EXTRACT;
     Serial.println("INFO:BREW_MANUAL_TAKEOVER");
-    int pwm = constrain(sys.pumpPower + sys.handoverOffset, 0, PUMP_PWM_FULL);
+    int pwm = (sys.pumpPower <= POT_ZERO_DEADBAND) ? 0
+              : constrain(sys.pumpPower + sys.handoverOffset, 0, PUMP_PWM_FULL);
     analogWrite(PUMP_PWM_PIN, pwm);
     sys.lastPumpPwm = pwm;
     return;
@@ -1248,7 +1252,8 @@ void runBrewSegmentEngine() {
     sys.handoverOffset = sys.lastPumpPwm - sys.pumpPower;
     sys.brewPhase = BREW_PHASE_EXTRACT;
     Serial.println("INFO:BREW_MANUAL_TAKEOVER");
-    int pwm = constrain(sys.pumpPower + sys.handoverOffset, 0, PUMP_PWM_FULL);
+    int pwm = (sys.pumpPower <= POT_ZERO_DEADBAND) ? 0
+              : constrain(sys.pumpPower + sys.handoverOffset, 0, PUMP_PWM_FULL);
     analogWrite(PUMP_PWM_PIN, pwm);
     sys.lastPumpPwm = pwm;
     return;
